@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Food Delivery",
+    "slug": "fooddel-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "fooddel",
+    "icon": "./src/public/logo.jpeg",
+    "splash": {
+      "image": "./src/public/logo.jpeg",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fooddel.app"
+    },
+    "android": {
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./src/public/logo.jpeg",
+        "backgroundColor": "#E6F4FE"
+      },
+      "package": "com.fooddel.app"
+    },
+    "web": {
+      "favicon": "./src/public/logo.jpeg",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-web-browser"
+    ]
+  }
+}
