@@ -1,0 +1,175 @@
+// ─────────────────────────────────────────────────────────────
+// Prisma Schema — Food Delivery Backend
+// Database: PostgreSQL
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  customer
+  courier
+  admin
+}
+
+// ✅ Only 3 statuses (lowercase)
+enum OrderStatus {
+  pending
+  approved
+  rejected
+}
+
+// ─────────────────────────────────────────────────────────────
+// Category
+// ─────────────────────────────────────────────────────────────
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  icon      String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  menuItems MenuItem[]
+
+  @@index([name])
+  @@map("categories")
+}
+
+// ─────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  phone     String?
+  role      Role     @default(customer)
+  avatar    String?
+  fcmToken  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordersAsCustomer Order[]           @relation("CustomerOrders")
+  ordersAsCourier  Order[]           @relation("CourierOrders")
+  courierLocation  CourierLocation?
+  locationHistory  LocationHistory[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────
+// MenuItem  (this is your "Food")
+// ─────────────────────────────────────────────────────────────
+
+model MenuItem {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  price        Float
+  image        String?
+
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  rating       Float    @default(4.5)
+  isPopular    Boolean  @default(false)
+  isAvailable  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([isPopular])
+  @@map("menu_items")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Order
+// ─────────────────────────────────────────────────────────────
+
+model Order {
+  id           String      @id @default(uuid())
+  customerId   String
+  courierId    String?
+  status       OrderStatus @default(pending)
+  totalAmount  Float
+  deliveryLat  Float
+  deliveryLng  Float
+  deliveryAddr String?
+  items        Json
+
+  paymentMethod String?    @default("cash")     // "cash" | "chapa"
+  paymentStatus String?    @default("pending")  // "pending" | "paid" | "failed"
+  txRef         String?    @unique              // 👈 NEW: Chapa transaction reference
+  paidAt        DateTime?                       // 👈 NEW: when payment was confirmed
+  notes         String?
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  customer        User               @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
+  courier         User?              @relation("CourierOrders",  fields: [courierId],  references: [id], onDelete: SetNull)
+  locationHistory LocationHistory[]
+
+  @@index([customerId])
+  @@index([courierId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CourierLocation
+// ─────────────────────────────────────────────────────────────
+
+model CourierLocation {
+  courierId String   @id
+  lat       Float
+  lng       Float
+  heading   Float    @default(0)
+  speed     Float    @default(0)
+  accuracy  Float    @default(0)
+  isOnline  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  courier User @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  @@index([isOnline])
+  @@map("courier_locations")
+}
+
+// ─────────────────────────────────────────────────────────────
+// LocationHistory
+// ─────────────────────────────────────────────────────────────
+
+model LocationHistory {
+  id        String   @id @default(uuid())
+  courierId String
+  orderId   String?
+  lat       Float
+  lng       Float
+  heading   Float    @default(0)
+  speed     Float    @default(0)
+  createdAt DateTime @default(now())
+
+  courier User   @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  order   Order? @relation(fields: [orderId],   references: [id], onDelete: SetNull)
+
+  @@index([courierId, createdAt])
+  @@index([orderId, createdAt])
+  @@map("location_history")
+}
