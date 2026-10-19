@@ -1,11 +1,12 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { z } = require('zod');
-const { prisma } = require('../lib/prisma');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { z } = require("zod");
+const { prisma } = require("../lib/prisma");
 
 // ═══════════════════════════════════════════
 // VALIDATION SCHEMAS
 // ═══════════════════════════════════════════
+
 const signupSchema = z.object({
   name: z.string().min(2).max(60),
   email: z.string().email(),
@@ -18,11 +19,12 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
+// ✅ Renamed: avatar → avatarUrl
 const updateProfileSchema = z.object({
   name: z.string().min(2).max(60).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
-  avatar: z.string().optional(),
+  avatarUrl: z.string().url().optional(), // Cloudinary URL
 });
 
 const changePasswordSchema = z.object({
@@ -33,13 +35,13 @@ const changePasswordSchema = z.object({
 // ═══════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════
-const signToken = (user) =>
-  jwt.sign(
-    { id: user.id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '30d' }
-  );
 
+const signToken = (user) =>
+  jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+    expiresIn: "30d",
+  });
+
+// ✅ Now returns `avatarUrl` (matching the schema and frontend contract)
 const sanitize = (user) => ({
   id: user.id,
   _id: user.id,
@@ -47,7 +49,7 @@ const sanitize = (user) => ({
   email: user.email,
   phone: user.phone,
   role: user.role,
-  avatar: user.avatar || null,
+  avatarUrl: user.avatarUrl || null, // ✅ renamed
   createdAt: user.createdAt,
 });
 
@@ -59,7 +61,7 @@ exports.signup = async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid input',
+      message: "Invalid input",
       errors: parsed.error.flatten(),
     });
   }
@@ -68,13 +70,13 @@ exports.signup = async (req, res) => {
 
   try {
     const exists = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase().trim() },
     });
 
     if (exists) {
       return res
         .status(409)
-        .json({ success: false, message: 'Email already in use' });
+        .json({ success: false, message: "Email already in use" });
     }
 
     const hash = await bcrypt.hash(password, 10);
@@ -85,7 +87,7 @@ exports.signup = async (req, res) => {
         email: email.toLowerCase().trim(),
         password: hash,
         phone: phone || null,
-        role: 'customer',
+        role: "customer", // ✅ never trust client role
       },
     });
 
@@ -97,8 +99,8 @@ exports.signup = async (req, res) => {
       user: sanitize(user),
     });
   } catch (e) {
-    console.error('Signup error:', e);
-    res.status(500).json({ success: false, message: 'Signup failed' });
+    console.error("Signup error:", e);
+    res.status(500).json({ success: false, message: "Signup failed" });
   }
 };
 
@@ -110,7 +112,7 @@ exports.login = async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid input',
+      message: "Invalid input",
       errors: parsed.error.flatten(),
     });
   }
@@ -125,14 +127,14 @@ exports.login = async (req, res) => {
     if (!user) {
       return res
         .status(401)
-        .json({ success: false, message: 'Invalid credentials' });
+        .json({ success: false, message: "Invalid credentials" });
     }
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
       return res
         .status(401)
-        .json({ success: false, message: 'Invalid credentials' });
+        .json({ success: false, message: "Invalid credentials" });
     }
 
     const token = signToken(user);
@@ -143,8 +145,8 @@ exports.login = async (req, res) => {
       user: sanitize(user),
     });
   } catch (e) {
-    console.error('Login error:', e);
-    res.status(500).json({ success: false, message: 'Login failed' });
+    console.error("Login error:", e);
+    res.status(500).json({ success: false, message: "Login failed" });
   }
 };
 
@@ -160,12 +162,12 @@ exports.me = async (req, res) => {
     if (!user) {
       return res
         .status(404)
-        .json({ success: false, message: 'User not found' });
+        .json({ success: false, message: "User not found" });
     }
 
     res.json({ success: true, user: sanitize(user) });
   } catch (e) {
-    console.error('Me error:', e);
+    console.error("Me error:", e);
     res.status(500).json({ success: false, message: e.message });
   }
 };
@@ -178,12 +180,12 @@ exports.updateProfile = async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid input',
+      message: "Invalid input",
       errors: parsed.error.flatten(),
     });
   }
 
-  const { name, email, phone, avatar } = parsed.data;
+  const { name, email, phone, avatarUrl } = parsed.data;
 
   try {
     // If email is changing, make sure it's not already taken
@@ -195,7 +197,7 @@ exports.updateProfile = async (req, res) => {
       if (existing && existing.id !== req.user.id) {
         return res
           .status(409)
-          .json({ success: false, message: 'Email already in use' });
+          .json({ success: false, message: "Email already in use" });
       }
     }
 
@@ -205,14 +207,43 @@ exports.updateProfile = async (req, res) => {
         ...(name !== undefined && { name: name.trim() }),
         ...(email !== undefined && { email: email.toLowerCase().trim() }),
         ...(phone !== undefined && { phone }),
-        ...(avatar !== undefined && { avatar }),
+        ...(avatarUrl !== undefined && { avatarUrl }), // ✅
       },
     });
 
     res.json({ success: true, user: sanitize(user) });
   } catch (e) {
-    console.error('Update profile error:', e);
+    console.error("Update profile error:", e);
     res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+// ═══════════════════════════════════════════
+// AUTHENTICATED — UPLOAD AVATAR (Cloudinary)
+// ═══════════════════════════════════════════
+exports.uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
+
+    // ✅ Cloudinary URL from multer-storage-cloudinary
+    const avatarUrl = req.file.path;
+
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl },
+    });
+
+    res.json({
+      success: true,
+      message: "Avatar updated",
+      url: avatarUrl,
+      user: sanitize(user),
+    });
+  } catch (e) {
+    console.error("uploadAvatar error:", e);
+    res.status(500).json({ success: false, message: "Upload failed" });
   }
 };
 
@@ -224,7 +255,7 @@ exports.changePassword = async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid input',
+      message: "Invalid input",
       errors: parsed.error.flatten(),
     });
   }
@@ -239,14 +270,14 @@ exports.changePassword = async (req, res) => {
     if (!user) {
       return res
         .status(404)
-        .json({ success: false, message: 'User not found' });
+        .json({ success: false, message: "User not found" });
     }
 
     const ok = await bcrypt.compare(currentPassword, user.password);
     if (!ok) {
       return res
         .status(400)
-        .json({ success: false, message: 'Current password is incorrect' });
+        .json({ success: false, message: "Current password is incorrect" });
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
@@ -256,12 +287,12 @@ exports.changePassword = async (req, res) => {
       data: { password: hash },
     });
 
-    res.json({ success: true, message: 'Password updated' });
+    res.json({ success: true, message: "Password updated" });
   } catch (e) {
-    console.error('Change password error:', e);
+    console.error("Change password error:", e);
     res
       .status(500)
-      .json({ success: false, message: 'Failed to change password' });
+      .json({ success: false, message: "Failed to change password" });
   }
 };
 
@@ -272,10 +303,22 @@ exports.saveFcmToken = async (req, res) => {
   try {
     const token = req.body.token || req.body.fcmToken;
 
-    if (!token) {
+    if (!token || typeof token !== "string") {
       return res
         .status(400)
-        .json({ success: false, message: 'Missing token' });
+        .json({ success: false, message: "Missing token" });
+    }
+
+    // ✅ fcmToken is now @unique — clear it from any other user first
+    //    (device switched accounts; we take ownership of the token)
+    try {
+      await prisma.user.updateMany({
+        where: { fcmToken: token, NOT: { id: req.user.id } },
+        data: { fcmToken: null },
+      });
+    } catch (cleanupErr) {
+      // non-fatal — proceed with save
+      console.warn("FCM token cleanup warning:", cleanupErr.message);
     }
 
     await prisma.user.update({
@@ -285,10 +328,17 @@ exports.saveFcmToken = async (req, res) => {
 
     res.json({ success: true, ok: true });
   } catch (e) {
-    console.error('Save FCM error:', e);
+    // ✅ Handle unique violation gracefully
+    if (e.code === "P2002") {
+      return res.status(409).json({
+        success: false,
+        message: "This device is already linked to another account",
+      });
+    }
+    console.error("Save FCM error:", e);
     res
       .status(500)
-      .json({ success: false, message: 'Failed to save token' });
+      .json({ success: false, message: "Failed to save token" });
   }
 };
 
@@ -303,8 +353,8 @@ exports.getAllUsers = async (req, res) => {
     if (role) where.role = String(role).toLowerCase();
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
       ];
     }
 
@@ -316,15 +366,15 @@ exports.getAllUsers = async (req, res) => {
         email: true,
         phone: true,
         role: true,
-        avatar: true,
+        avatarUrl: true, // ✅ renamed
         createdAt: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     res.json({ success: true, count: users.length, data: users });
   } catch (e) {
-    console.error('Get all users error:', e);
+    console.error("Get all users error:", e);
     res.status(500).json({ success: false, message: e.message });
   }
 };
@@ -334,12 +384,20 @@ exports.getAllUsers = async (req, res) => {
 // ═══════════════════════════════════════════
 exports.updateUserRole = async (req, res) => {
   try {
-    const role = String(req.body.role || '').toLowerCase();
+    const role = String(req.body.role || "").toLowerCase();
 
-    if (!['customer', 'courier', 'admin'].includes(role)) {
+    if (!["customer", "courier", "admin"].includes(role)) {
       return res
         .status(400)
-        .json({ success: false, message: 'Invalid role' });
+        .json({ success: false, message: "Invalid role" });
+    }
+
+    // ✅ Prevent admin from demoting themselves (locks themselves out)
+    if (req.params.id === req.user.id && role !== "admin") {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot demote yourself",
+      });
     }
 
     const user = await prisma.user.update({
@@ -355,12 +413,12 @@ exports.updateUserRole = async (req, res) => {
 
     res.json({ success: true, data: user });
   } catch (e) {
-    if (e.code === 'P2025') {
+    if (e.code === "P2025") {
       return res
         .status(404)
-        .json({ success: false, message: 'User not found' });
+        .json({ success: false, message: "User not found" });
     }
-    console.error('Update role error:', e);
+    console.error("Update role error:", e);
     res.status(500).json({ success: false, message: e.message });
   }
 };
@@ -373,19 +431,19 @@ exports.deleteUser = async (req, res) => {
     if (req.params.id === req.user.id) {
       return res
         .status(400)
-        .json({ success: false, message: 'Cannot delete yourself' });
+        .json({ success: false, message: "Cannot delete yourself" });
     }
 
     await prisma.user.delete({ where: { id: req.params.id } });
 
-    res.json({ success: true, message: 'User deleted' });
+    res.json({ success: true, message: "User deleted" });
   } catch (e) {
-    if (e.code === 'P2025') {
+    if (e.code === "P2025") {
       return res
         .status(404)
-        .json({ success: false, message: 'User not found' });
+        .json({ success: false, message: "User not found" });
     }
-    console.error('Delete user error:', e);
+    console.error("Delete user error:", e);
     res.status(500).json({ success: false, message: e.message });
   }
 };

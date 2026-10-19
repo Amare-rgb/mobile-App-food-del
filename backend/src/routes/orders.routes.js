@@ -1,29 +1,34 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const orderController = require('../controller/order.controller');
-const { authenticate } = require('../middleware/auth');
+const orderController = require("../controller/order.controller");
+const { authenticate, requireRole } = require("../middleware/auth");
 
+// All order routes require login
 router.use(authenticate);
 
 // ─── Specific routes FIRST (must come before /:id) ───
-router.get('/my', orderController.listMine);
-router.get('/mine', orderController.listMine);
-router.get('/pending/list', orderController.listPending);
-router.get('/stats', orderController.getStats);
-router.get('/all', orderController.listAll);
+router.get("/my", orderController.listMine);
+router.get("/mine", orderController.listMine); // alias
+
+// 🔒 Admin only — full list, pending queue, stats
+router.get("/all", requireRole("admin"), orderController.listAll);
+router.get("/pending/list", requireRole("admin", "courier"), orderController.listPending);
+router.get("/stats", requireRole("admin"), orderController.getStats);
 
 // ─── Create ───
-router.post('/', orderController.create);
+router.post("/", orderController.create);
 
 // ─── Dynamic routes LAST ───
-router.get('/:id', orderController.getById);
-router.post('/:id/accept', orderController.accept);
+router.get("/:id", orderController.getById);
 
-// Accept both PATCH and PUT for status updates
-router.patch('/:id/status', orderController.updateStatus);
-router.put('/:id/status', orderController.updateStatus);
+// 🛵 Couriers accept orders (admin can too, if needed)
+router.post("/:id/accept", requireRole("courier", "admin"), orderController.accept);
 
-// 🗑️ Delete Order (Admin Only)
-router.delete('/:id', orderController.deleteOrder);
+// Status updates — admin only (approve/reject)
+router.patch("/:id/status", requireRole("admin"), orderController.updateStatus);
+router.put("/:id/status", requireRole("admin"), orderController.updateStatus);
+
+// 🗑️ Delete order — admin only
+router.delete("/:id", requireRole("admin"), orderController.deleteOrder);
 
 module.exports = router;

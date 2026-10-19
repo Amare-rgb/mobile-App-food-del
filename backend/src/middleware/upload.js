@@ -1,31 +1,36 @@
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const multer = require('multer');
 
-const uploadsDir = path.join(__dirname, "..", "..", "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// 1. የ Cloudinary መረጃዎችን ከ Environment Variables ማንበብ
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-    cb(null, `food-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+// 2. ፎቶዎች በCloudinary ውስጥ የት እንደሚቀመጡ ማዋቀር
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'food-delivery-uploads', // በCloudinary አካውንትህ ውስጥ የሚፈጠረው ፎልደር ስም
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
   },
 });
 
+// 3. የፋይል ዓይነት ማረጋገጫ (File Filter)
 function fileFilter(_req, file, cb) {
-  if (!file.mimetype.startsWith("image/")) {
-    return cb(new Error("Only image files are allowed"));
+  if (!file.mimetype.startsWith('image/')) {
+    return cb(new Error('Only image files are allowed'), false);
   }
   cb(null, true);
 }
 
+// 4. የ Multer ማዋቀሪያ
 const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // እስከ 5MB የሚደርስ ፎቶ ብቻ
 });
 
-module.exports = { upload, uploadsDir };
+module.exports = { upload };

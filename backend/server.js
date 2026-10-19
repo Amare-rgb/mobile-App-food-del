@@ -3,10 +3,8 @@ require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
 const { Server } = require("socket.io");
-const os = require("os"); // ✅ Added to get your real IP dynamically
+const os = require("os"); // ✅ get real IP dynamically
 
 const { prisma } = require("./src/lib/prisma");
 const { sendPush } = require("./src/utils/notifications");
@@ -24,20 +22,10 @@ const VALID_ORDER_STATUSES = ["pending", "approved", "rejected"];
 
 const app = express();
 
-// ---------- Ensure uploads folder exists ----------
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log(`📁 Created uploads folder: ${uploadsDir}`);
-}
-
 // ---------- Global middleware ----------
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Chapa may post form-encoded data
-
-// ---------- Static files ----------
-app.use("/uploads", express.static(uploadsDir));
 
 // ---------- Request logger ----------
 app.use((req, _res, next) => {
@@ -51,6 +39,7 @@ app.get("/", (_req, res) => {
     name: "Food Delivery API",
     version: "1.0.0",
     status: "running",
+    storage: "cloudinary", // ✅ images are on Cloudinary now
     endpoints: {
       health: "/health",
       auth: "/api/auth",
@@ -59,7 +48,6 @@ app.get("/", (_req, res) => {
       foods: "/api/foods",
       gps: "/api/gps",
       payments: "/api/payments",
-      uploads: "/uploads",
     },
   });
 });
@@ -110,6 +98,24 @@ const HOST = "0.0.0.0"; // ✅ Listen on all network interfaces
 async function start() {
   console.log("");
   console.log("  🏥 FOOD DELIVERY SERVER STARTING");
+
+  // ☁️ Cloudinary check
+  console.log("☁️  Cloudinary:");
+  if (!process.env.CLOUDINARY_CLOUD_NAME) {
+    console.warn("   ⚠️  CLOUDINARY_CLOUD_NAME is missing in .env — image upload will fail");
+  } else {
+    console.log(`   ✅ CLOUD_NAME: ${process.env.CLOUDINARY_CLOUD_NAME}`);
+  }
+  if (!process.env.CLOUDINARY_API_KEY) {
+    console.warn("   ⚠️  CLOUDINARY_API_KEY is missing in .env");
+  } else {
+    console.log("   ✅ API_KEY loaded");
+  }
+  if (!process.env.CLOUDINARY_API_SECRET) {
+    console.warn("   ⚠️  CLOUDINARY_API_SECRET is missing in .env");
+  } else {
+    console.log("   ✅ API_SECRET loaded");
+  }
 
   // 💳 Chapa configuration check
   console.log("💳 Payments:");
@@ -398,7 +404,7 @@ async function start() {
     console.log("═══════════════════════════════════════════");
     console.log(`   Local:    http://localhost:${PORT}`);
     console.log(`   Network:  http://${localIp}:${PORT}`); // ✅ Prints real IP
-    console.log(`   Uploads:  http://${localIp}:${PORT}/uploads`);
+    console.log(`   Cloudinary: enabled ☁️`);              // ✅ replaces Uploads line
     console.log(`   Socket.io ready`);
     console.log(`   GPS tracking enabled`);
     console.log("");
@@ -411,6 +417,7 @@ async function start() {
     console.log("     GET    /api/orders/stats");
     console.log("     GET    /api/categories");
     console.log("     GET    /api/foods");
+    console.log("     POST   /api/foods           (multipart/form-data, field: image)");
     console.log("     DELETE /api/foods/:id");
     console.log("     POST   /api/payments/chapa/initialize");
     console.log("     GET    /api/payments/chapa/verify/:txRef");

@@ -22,11 +22,17 @@ enum Role {
   admin
 }
 
-// ✅ Only 3 statuses (lowercase)
+// ✅ Extended for real delivery flow
+// (old: pending | approved | rejected)
 enum OrderStatus {
   pending
   approved
   rejected
+  preparing
+  picked_up
+  on_the_way
+  delivered
+  cancelled
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -34,11 +40,12 @@ enum OrderStatus {
 // ─────────────────────────────────────────────────────────────
 
 model Category {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  icon      String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id        String   @id @default(uuid())
+  name      String   @unique
+  icon      String?  // emoji or icon name
+  imageUrl  String?  // optional category banner (Cloudinary URL)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   menuItems MenuItem[]
 
@@ -57,8 +64,8 @@ model User {
   password  String
   phone     String?
   role      Role     @default(customer)
-  avatar    String?
-  fcmToken  String?
+  avatarUrl String?  // ✅ renamed from `avatar` — Cloudinary URL
+  fcmToken  String?  @unique // ✅ unique — prevents cross-device push leaks
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -73,24 +80,27 @@ model User {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MenuItem  (this is your "Food")
+// MenuItem  (a.k.a. "Food")
 // ─────────────────────────────────────────────────────────────
 
 model MenuItem {
-  id           String   @id @default(uuid())
-  name         String
-  description  String?
-  price        Float
-  image        String?
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  price         Float
+  imageUrl      String?  // ✅ renamed from `image` — Cloudinary URL
+  imagePublicId String?  // ✅ Cloudinary public_id (for deletion)
 
-  categoryId   String
-  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  rating       Float    @default(4.5)
-  isPopular    Boolean  @default(false)
-  isAvailable  Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rating      Float    @default(4.5)
+  isPopular   Boolean  @default(false)
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems OrderItem[]
 
   @@index([categoryId])
   @@index([isPopular])
@@ -110,30 +120,53 @@ model Order {
   deliveryLat  Float
   deliveryLng  Float
   deliveryAddr String?
-  items        Json
+  items        Json        // keep for v1 (migrate to OrderItem later)
 
-  paymentMethod String?    @default("cash")     // "cash" | "chapa"
-  paymentStatus String?    @default("pending")  // "pending" | "paid" | "failed"
-  txRef         String?    @unique              // 👈 NEW: Chapa transaction reference
-  paidAt        DateTime?                       // 👈 NEW: when payment was confirmed
+  paymentMethod String?   @default("cash")    // "cash" | "chapa"
+  paymentStatus String?   @default("pending") // "pending" | "paid" | "failed"
+  txRef         String?   @unique             // Chapa transaction reference
+  paidAt        DateTime?                     // when payment confirmed
   notes         String?
 
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   customer        User               @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: Cascade)
   courier         User?              @relation("CourierOrders",  fields: [courierId],  references: [id], onDelete: SetNull)
   locationHistory LocationHistory[]
+  orderItems      OrderItem[]
 
   @@index([customerId])
   @@index([courierId])
   @@index([status])
   @@index([createdAt])
+  @@index([paymentStatus])
   @@map("orders")
 }
 
 // ─────────────────────────────────────────────────────────────
-// CourierLocation
+// OrderItem — optional, for future use (replaces Json items)
+// ─────────────────────────────────────────────────────────────
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  price      Float   // price at order time (snapshot)
+  name       String  // name snapshot
+  imageUrl   String? // image snapshot
+
+  order    Order    @relation(fields: [orderId],    references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@map("order_items")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CourierLocation  (1:1 with User where role = courier)
 // ─────────────────────────────────────────────────────────────
 
 model CourierLocation {

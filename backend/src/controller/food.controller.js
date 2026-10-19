@@ -1,12 +1,13 @@
 const { prisma } = require("../lib/prisma");
+const { cloudinary } = require("../../cloudinary"); // ✅ for deleting from Cloudinary
 
+// ─────────────────────────────────────────────────────────────
 // GET /api/foods
+// ─────────────────────────────────────────────────────────────
 exports.getFoods = async (req, res) => {
   try {
     const foods = await prisma.menuItem.findMany({
-      include: {
-        category: true, // 👈 Include the linked category
-      },
+      include: { category: true },
       orderBy: { createdAt: "desc" },
     });
 
@@ -15,12 +16,12 @@ exports.getFoods = async (req, res) => {
       name: f.name,
       description: f.description || "",
       price: Number(f.price),
-      image: f.image || "",
+      imageUrl: f.imageUrl || "",          // ✅ renamed from `image`
       rating: Number(f.rating ?? 4.5),
       isPopular: Boolean(f.isPopular ?? false),
       isAvailable: Boolean(f.isAvailable ?? true),
       categoryId: f.categoryId,
-      category: f.category ? f.category.name : "", // 👈 Extract the category name string
+      category: f.category ? f.category.name : "",
     }));
 
     return res.status(200).json(formatted);
@@ -30,18 +31,30 @@ exports.getFoods = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────
 // POST /api/foods
+// Accepts multipart/form-data with optional `image` file
+// OR JSON with `imageUrl` (if the client already uploaded separately)
+// ─────────────────────────────────────────────────────────────
 exports.createFood = async (req, res) => {
   try {
     const {
-      name, description, price, image, categoryId,
+      name, description, price, categoryId,
       rating, isPopular, isAvailable,
     } = req.body;
 
-    if (!name || !price || !image || !categoryId) {
+    // ✅ imageUrl comes from either the uploaded file or the body
+    const imageUrl = req.file ? req.file.path : req.body.imageUrl || null;
+    const imagePublicId = req.file ? req.file.filename : null;
+
+    if (!name || !price || !categoryId) {
       return res.status(400).json({
-        error: "name, price, image and categoryId are required",
+        error: "name, price and categoryId are required",
       });
+    }
+
+    if (!imageUrl) {
+      return res.status(400).json({ error: "image is required" });
     }
 
     const food = await prisma.menuItem.create({
@@ -49,11 +62,12 @@ exports.createFood = async (req, res) => {
         name,
         description: description || "",
         price: Number(price),
-        image,
-        category: { connect: { id: categoryId } }, // 👈 Connect using relation
+        imageUrl,           // ✅ Cloudinary HTTPS URL
+        imagePublicId,      // ✅ Cloudinary public_id (for later deletion)
+        category: { connect: { id: categoryId } },
         rating: Number(rating ?? 4.5),
-        isPopular: Boolean(isPopular ?? false),
-        isAvailable: Boolean(isAvailable ?? true),
+        isPopular: isPopular === "true" || isPopular === true,
+        isAvailable: isAvailable === "false" || isAvailable === false ? false : true,
       },
       include: { category: true },
     });
@@ -65,12 +79,14 @@ exports.createFood = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────
 // PUT /api/foods/:id
+// ─────────────────────────────────────────────────────────────
 exports.updateFood = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      name, description, price, image, categoryId,
+      name, description, price, categoryId,
       rating, isPopular, isAvailable,
     } = req.body;
 
@@ -79,19 +95,36 @@ exports.updateFood = async (req, res) => {
       return res.status(404).json({ error: "Food not found" });
     }
 
+    // ✅ If a new image was uploaded, delete the old one from Cloudinary
+    if (req.file && existing.imagePublicId) {
+      try {
+        await cloudinary.uploader.destroy(existing.imagePublicId);
+      } catch (clErr) {
+        console.warn("⚠️ Cloudinary delete old image failed:", clErr.message);
+      }
+    }
+
+    const data = {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(price !== undefined && { price: Number(price) }),
+      ...(categoryId !== undefined && { category: { connect: { id: categoryId } } }),
+      ...(rating !== undefined && { rating: Number(rating) }),
+      ...(isPopular !== undefined && { isPopular: isPopular === "true" || isPopular === true }),
+      ...(isAvailable !== undefined && { isAvailable: isAvailable === "true" || isAvailable === true }),
+    };
+
+    // ✅ Image update: prefer uploaded file, else imageUrl from body
+    if (req.file) {
+      data.imageUrl = req.file.path;
+      data.imagePublicId = req.file.filename;
+    } else if (req.body.imageUrl !== undefined) {
+      data.imageUrl = req.body.imageUrl;
+    }
+
     const updated = await prisma.menuItem.update({
       where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-        ...(price !== undefined && { price: Number(price) }),
-        ...(image !== undefined && { image }),
-        // 👈 Handle relation update if categoryId is provided
-        ...(categoryId !== undefined && { category: { connect: { id: categoryId } } }),
-        ...(rating !== undefined && { rating: Number(rating) }),
-        ...(isPopular !== undefined && { isPopular: Boolean(isPopular) }),
-        ...(isAvailable !== undefined && { isAvailable: Boolean(isAvailable) }),
-      },
+      data,
       include: { category: true },
     });
 
@@ -102,21 +135,23 @@ exports.updateFood = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────
 // POST /api/foods/upload
+// Standalone image upload — returns the Cloudinary URL
+// ─────────────────────────────────────────────────────────────
 exports.uploadFoodImage = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No image file uploaded" });
     }
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const url = `${baseUrl}/uploads/${req.file.filename}`;
-
+    // ✅ Cloudinary URL (e.g. https://res.cloudinary.com/.../food.jpg)
     return res.status(200).json({
-      url,
-      filename: req.file.filename,
+      message: "Uploaded to Cloudinary",
+      imageUrl: req.file.path,          // full HTTPS URL
+      publicId: req.file.filename,      // Cloudinary public_id
       size: req.file.size,
-      mimetype: req.file.mimetype,
+      format: req.file.format || req.file.mimetype?.split("/")[1],
     });
   } catch (error) {
     console.error("❌ uploadFoodImage error:", error);
@@ -124,7 +159,10 @@ exports.uploadFoodImage = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────
 // DELETE /api/foods/:id
+// Deletes the DB row AND removes the image from Cloudinary
+// ─────────────────────────────────────────────────────────────
 exports.deleteFood = async (req, res) => {
   try {
     const { id } = req.params;
@@ -132,6 +170,15 @@ exports.deleteFood = async (req, res) => {
     const existing = await prisma.menuItem.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ error: "Food not found" });
+    }
+
+    // ✅ Delete the image from Cloudinary first (best-effort)
+    if (existing.imagePublicId) {
+      try {
+        await cloudinary.uploader.destroy(existing.imagePublicId);
+      } catch (clErr) {
+        console.warn("⚠️ Cloudinary delete failed:", clErr.message);
+      }
     }
 
     await prisma.menuItem.delete({ where: { id } });
