@@ -9,13 +9,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
-import { formatPrice } from '../utils/format';   // ✅ ETB formatter
+import { formatPrice } from '../utils/format';
 
 const OrderSuccessScreen = ({ route, navigation }: any) => {
-  // Passed from CheckoutScreen: { orderId, total }
   const { orderId, total } = route.params || {};
 
-  // ─── Subtle pop-in animation for the success icon ───
   const scale = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -37,26 +35,29 @@ const OrderSuccessScreen = ({ route, navigation }: any) => {
 
   const shortId = orderId ? String(orderId).slice(-6).toUpperCase() : null;
 
+  // ✅ Reset stack so back doesn't return to payment/checkout
+  const goToTab = (screen: 'Home' | 'Orders') => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'CustomerTabs', params: { screen } }],
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.content}>
-        {/* ─── Success Icon ─── */}
         <Animated.View
-          style={[
-            styles.iconCircle,
-            { transform: [{ scale }], opacity },
-          ]}
+          style={[styles.iconCircle, { transform: [{ scale }], opacity }]}
         >
           <Ionicons name="checkmark" size={60} color={COLORS.white} />
         </Animated.View>
 
-        {/* ─── Title ─── */}
         <Text style={styles.title}>Order Placed!</Text>
         <Text style={styles.subtitle}>
-          Your order has been received and is being prepared. You'll get it soon!
+          Your order has been received and is being prepared. You'll get it
+          soon!
         </Text>
 
-        {/* ─── Order info card ─── */}
         {(shortId || typeof total === 'number') && (
           <View style={styles.infoCard}>
             {shortId && (
@@ -77,12 +78,9 @@ const OrderSuccessScreen = ({ route, navigation }: any) => {
           </View>
         )}
 
-        {/* ─── Actions ─── */}
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() =>
-            navigation.navigate('CustomerTabs', { screen: 'Orders' })
-          }
+          onPress={() => goToTab('Orders')}
           activeOpacity={0.8}
         >
           <Ionicons name="receipt-outline" size={20} color={COLORS.white} />
@@ -91,9 +89,7 @@ const OrderSuccessScreen = ({ route, navigation }: any) => {
 
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={() =>
-            navigation.navigate('CustomerTabs', { screen: 'Home' })
-          }
+          onPress={() => goToTab('Home')}
           activeOpacity={0.8}
         >
           <Ionicons name="home-outline" size={20} color={COLORS.dark} />
@@ -113,18 +109,16 @@ const styles = StyleSheet.create({
     padding: SIZES.xl,
   },
 
-  // ─── Icon ───
   iconCircle: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.success, // ⚠️ must exist in theme.ts
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SIZES.xl,
   },
 
-  // ─── Text ───
   title: { ...FONTS.h1, marginBottom: SIZES.sm, color: COLORS.dark },
   subtitle: {
     ...FONTS.body,
@@ -133,7 +127,6 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xl,
   },
 
-  // ─── Order info card ───
   infoCard: {
     width: '100%',
     backgroundColor: COLORS.lightGray,
@@ -160,7 +153,6 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  // ─── Buttons ───
   primaryBtn: {
     flexDirection: 'row',
     justifyContent: 'center',

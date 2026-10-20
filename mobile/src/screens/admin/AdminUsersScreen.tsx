@@ -6,28 +6,25 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { adminService, UserRole } from '../../services/admin.service';   // ✅ Import UserRole
+import { adminService, UserRole } from '../../services/admin.service';
 import { COLORS, SIZES, FONTS } from '../../utils/theme';
 
-// ✅ Use the SAME type as the service — no duplicate, no mismatch
-type Role = UserRole;   // = 'CUSTOMER' | 'COURIER' | 'ADMIN'
+// ✅ Use the SAME lowercase type as the service
+type Role = UserRole; // = 'customer' | 'courier' | 'admin'
 
+// ✅ Lowercase keys — the source of truth is the schema
 const ROLE_COLORS: Record<string, string> = {
-  ADMIN: '#9B51E0',
-  COURIER: '#4A90E2',
-  CUSTOMER: '#34C759',
-  // lowercase fallbacks for safety
   admin: '#9B51E0',
-  rider: '#4A90E2',
+  courier: '#4A90E2',
   customer: '#34C759',
 };
 
 // ✅ Helper — works for Prisma (`id`) AND Mongoose (`_id`)
 const getId = (o: any): string => o?.id || o?._id || '';
 
-// ✅ Normalize any role to UPPERCASE for consistent comparison
+// ✅ Normalize any role to lowercase for consistent comparison
 const normalizeRole = (role: string): string =>
-  String(role || 'CUSTOMER').toUpperCase();
+  String(role || 'customer').toLowerCase();
 
 const AdminUsersScreen = ({ navigation }: any) => {
   const [users, setUsers] = useState<any[]>([]);
@@ -68,20 +65,19 @@ const AdminUsersScreen = ({ navigation }: any) => {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Customer',
-        onPress: () => updateRole(getId(user), 'CUSTOMER'),
+        onPress: () => updateRole(getId(user), 'customer'), // ✅ lowercase
       },
       {
         text: 'Courier',
-        onPress: () => updateRole(getId(user), 'COURIER'),
+        onPress: () => updateRole(getId(user), 'courier'), // ✅ lowercase
       },
       {
         text: 'Admin',
-        onPress: () => updateRole(getId(user), 'ADMIN'),
+        onPress: () => updateRole(getId(user), 'admin'), // ✅ lowercase
       },
     ]);
   };
 
-  // ✅ role is now UserRole — matches the service signature
   const updateRole = async (id: string, role: UserRole) => {
     try {
       await adminService.updateUserRole(id, role);
@@ -90,7 +86,10 @@ const AdminUsersScreen = ({ navigation }: any) => {
     } catch (err: any) {
       Alert.alert(
         'Error',
-        err?.response?.data?.message || err?.message || 'Failed to update'
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Failed to update'
       );
     }
   };
@@ -109,7 +108,10 @@ const AdminUsersScreen = ({ navigation }: any) => {
           } catch (err: any) {
             Alert.alert(
               'Error',
-              err?.response?.data?.message || err?.message || 'Delete failed'
+              err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                err?.message ||
+                'Delete failed'
             );
           }
         },
@@ -118,7 +120,7 @@ const AdminUsersScreen = ({ navigation }: any) => {
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    const roleKey = normalizeRole(item.role);
+    const roleKey = normalizeRole(item.role); // ✅ 'customer' | 'courier' | 'admin'
     const color = ROLE_COLORS[roleKey] || COLORS.gray;
 
     return (
@@ -133,9 +135,7 @@ const AdminUsersScreen = ({ navigation }: any) => {
           <Text style={styles.email}>{item.email}</Text>
           {item.phone ? <Text style={styles.email}>{item.phone}</Text> : null}
           <View style={[styles.roleBadge, { backgroundColor: color + '20' }]}>
-            <Text style={[styles.roleText, { color }]}>
-              {roleKey.toLowerCase()}
-            </Text>
+            <Text style={[styles.roleText, { color }]}>{roleKey}</Text>
           </View>
         </View>
         <View style={styles.actions}>
@@ -156,12 +156,12 @@ const AdminUsersScreen = ({ navigation }: any) => {
     );
   };
 
-  // ✅ filterOptions use UPPERCASE values matching UserRole
+  // ✅ Lowercase values matching UserRole
   const filterOptions: { label: string; value: Role | '' }[] = [
     { label: 'All', value: '' },
-    { label: 'Customer', value: 'CUSTOMER' },
-    { label: 'Courier', value: 'COURIER' },
-    { label: 'Admin', value: 'ADMIN' },
+    { label: 'Customer', value: 'customer' },
+    { label: 'Courier', value: 'courier' },
+    { label: 'Admin', value: 'admin' },
   ];
 
   return (
@@ -298,7 +298,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 4,
   },
-  roleText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
+  roleText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
   actions: { flexDirection: 'row' },
   iconBtn: {
     width: 36,

@@ -26,7 +26,8 @@ const AdminSettingsScreen = ({ navigation }: any) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [avatar, setAvatar] = useState('');
+  // ✅ renamed from `avatar` → `avatarUrl` to match schema
+  const [avatarUrl, setAvatarUrl] = useState('');
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -35,28 +36,28 @@ const AdminSettingsScreen = ({ navigation }: any) => {
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // Load current values
-  useEffect(() => {
+  // ─── Load current values ───
+  const loadUser = useCallback(() => {
     if (user) {
       setName(user.name || '');
       setEmail(user.email || '');
       setPhone(user.phone || '');
-      setAvatar((user as any).avatar || '');
+      // ✅ read avatarUrl (not avatar)
+      setAvatarUrl((user as any).avatarUrl || '');
     }
   }, [user]);
 
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
+
   useFocusEffect(
     useCallback(() => {
-      if (user) {
-        setName(user.name || '');
-        setEmail(user.email || '');
-        setPhone(user.phone || '');
-        setAvatar((user as any).avatar || '');
-      }
-    }, [user])
+      loadUser();
+    }, [loadUser])
   );
 
-  // ─── Avatar upload ───
+  // ─── Avatar upload (Cloudinary) ───
   const pickAvatar = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -80,14 +81,23 @@ const AdminSettingsScreen = ({ navigation }: any) => {
       } as any);
 
       const res = await authService.uploadAvatar(formData);
-      if (res?.url) {
-        setAvatar(res.url);
-        Alert.alert('Uploaded', 'Logo updated — tap Save to apply.');
+
+      // ✅ supports both `url` and `imageUrl` response shapes
+      const uploadedUrl = res?.url || res?.imageUrl || res?.user?.avatarUrl;
+
+      if (uploadedUrl) {
+        setAvatarUrl(uploadedUrl);
+        Alert.alert('Uploaded', 'Avatar updated — tap Save to apply other changes.');
+      } else {
+        Alert.alert('Error', 'Upload succeeded but no URL was returned');
       }
     } catch (err: any) {
       Alert.alert(
         'Upload failed',
-        err?.response?.data?.message || err?.message || 'Could not upload'
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Could not upload'
       );
     } finally {
       setUploading(false);
@@ -105,7 +115,7 @@ const AdminSettingsScreen = ({ navigation }: any) => {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        avatar,
+        avatarUrl, // ✅ renamed
       });
       Alert.alert('Saved', 'Profile updated successfully');
     } catch (err: any) {
@@ -184,12 +194,15 @@ const AdminSettingsScreen = ({ navigation }: any) => {
             <View style={{ width: 26 }} />
           </View>
 
-          {/* ─── LOGO / AVATAR ─── */}
+          {/* ─── AVATAR ─── */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Logo / Avatar</Text>
             <View style={styles.avatarRow}>
-              {avatar ? (
-                <Image source={{ uri: avatar }} style={styles.avatar} />
+              {avatarUrl ? (
+                <Image
+                  source={{ uri: avatarUrl }} // ✅
+                  style={styles.avatar}
+                />
               ) : (
                 <View style={[styles.avatar, styles.avatarPlaceholder]}>
                   <Ionicons name="person" size={40} color={COLORS.gray} />

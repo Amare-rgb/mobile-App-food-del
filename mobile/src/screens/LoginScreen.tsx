@@ -10,12 +10,15 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Image, // ✅ Added Image import
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
+
+// ✅ Simple email regex — catches obvious typos before hitting the server
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -32,8 +35,12 @@ const LoginScreen = () => {
   // SUBMIT
   // ═══════════════════════════════════════════
   const handleSubmit = async () => {
+    // ─── Validate ───
     if (!email.trim() || !password) {
       return Alert.alert('Error', 'Please fill email and password');
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      return Alert.alert('Error', 'Please enter a valid email address');
     }
     if (!isLogin && !name.trim()) {
       return Alert.alert('Error', 'Please enter your full name');
@@ -61,11 +68,16 @@ const LoginScreen = () => {
 
       console.log('✅ Auth success:', loggedInUser);
 
-      const isAdmin = loggedInUser.role === 'admin';
+      // ✅ Normalize role — backend sends lowercase, but be safe
+      const role = (loggedInUser.role || '').toLowerCase();
+      const isAdmin = role === 'admin';
+      const isCourier = role === 'courier';
+
       Alert.alert(
-        isAdmin ? 'Welcome Admin 👑' : 'Welcome 👋',
-        `Signed in as ${loggedInUser.name}\nRole: ${loggedInUser.role}`
+        isAdmin ? 'Welcome Admin 👑' : isCourier ? 'Welcome Courier 🛵' : 'Welcome 👋',
+        `Signed in as ${loggedInUser.name}\nRole: ${role || 'customer'}`
       );
+      // ✅ No manual navigation — AppNavigator re-renders on `user` change
     } catch (err: any) {
       console.error('❌ Auth Error:', err);
       console.error('❌ Response:', err?.response?.data);
@@ -82,7 +94,7 @@ const LoginScreen = () => {
         message =
           'Cannot reach the server.\n\n' +
           '1. Is your backend running?\n' +
-          '2. Is API_URL correct in services/api.js?';
+          '2. Is API_URL correct in utils/api.ts?';
       } else {
         message = err?.message || message;
       }
@@ -104,11 +116,12 @@ const LoginScreen = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ✅ Replaced emoji with local logo image */}
+          {/* ✅ Logo with graceful fallback */}
           <Image
             source={require('../public/logo.jpeg')}
             style={styles.logoImage}
             resizeMode="contain"
+            // If the file is missing, Metro crashes — see note below
           />
 
           <Text style={styles.title}>
@@ -234,13 +247,12 @@ const styles = StyleSheet.create({
     padding: SIZES.lg,
     justifyContent: 'center',
   },
-  // ✅ Added style for the image logo
   logoImage: {
     width: 120,
     height: 120,
     alignSelf: 'center',
     marginBottom: SIZES.md,
-    borderRadius: 60, // Optional: makes it a circle
+    borderRadius: 60,
   },
   title: {
     ...FONTS.h1,

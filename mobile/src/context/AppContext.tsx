@@ -7,10 +7,17 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/auth.service';
-import { orderService } from '../services/order.service';
+import {
+  orderService,
+  PaymentMethod, // ✅ import the type that fixes the TS error
+} from '../services/order.service';
 
-// ─── Types ───
-export type Role = 'customer' | 'rider' | 'admin';
+// ═══════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════
+
+// ✅ Matches Prisma Role enum — 'courier' not 'rider'
+export type Role = 'customer' | 'courier' | 'admin';
 
 export interface User {
   id: string;
@@ -19,14 +26,14 @@ export interface User {
   email: string;
   role: Role;
   phone?: string;
-  avatar?: string;
+  avatarUrl?: string; // ✅ renamed from `avatar`
 }
 
 export interface CartItem {
   foodId: string;
   name: string;
   price: number;
-  image: string;
+  imageUrl?: string; // ✅ renamed from `image`
   quantity: number;
 }
 
@@ -52,6 +59,10 @@ export interface Order {
   deliveryLng?: number;
 }
 
+// ═══════════════════════════════════════════
+// Context type
+// ═══════════════════════════════════════════
+
 interface AppContextType {
   user: User | null;
   token: string | null;
@@ -68,7 +79,7 @@ interface AppContextType {
     foodId: string;
     name: string;
     price: number;
-    image: string;
+    imageUrl?: string; // ✅
   }) => Promise<void>;
   removeFromCart: (foodId: string) => Promise<void>;
   updateQuantity: (foodId: string, quantity: number) => Promise<void>;
@@ -77,7 +88,7 @@ interface AppContextType {
     foodId: string;
     name: string;
     price: number;
-    image: string;
+    imageUrl?: string; // ✅
   }) => Promise<void>;
 
   // Auth
@@ -93,14 +104,21 @@ interface AppContextType {
 
   // Orders
   placeOrder: (data: {
-    paymentMethod: string;
+    paymentMethod: PaymentMethod; // ✅ narrowed from `string`
     deliveryAddress: DeliveryAddress;
+    deliveryLat?: number;
+    deliveryLng?: number;
+    deliveryAddr?: string;
     notes?: string;
   }) => Promise<Order>;
   refreshOrders: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// ═══════════════════════════════════════════
+// Provider
+// ═══════════════════════════════════════════
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -162,7 +180,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     foodId: string;
     name: string;
     price: number;
-    image: string;
+    imageUrl?: string;
   }) => {
     const existing = cart.find((c) => c.foodId === item.foodId);
     const newCart = existing
@@ -197,7 +215,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     foodId: string;
     name: string;
     price: number;
-    image: string;
+    imageUrl?: string;
   }) => {
     const exists = favorites.find((f) => f.foodId === item.foodId);
     const newFav = exists
@@ -254,7 +272,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // ─── REFRESH USER ───
-  // Called after profile/avatar changes so drawer + screens update instantly
   const refreshUser = async () => {
     try {
       const res = await authService.me();
@@ -269,26 +286,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // ─── Orders ───
   const placeOrder = async (data: {
-    paymentMethod: string;
+    paymentMethod: PaymentMethod; // ✅ narrowed
     deliveryAddress: DeliveryAddress;
+    deliveryLat?: number;
+    deliveryLng?: number;
+    deliveryAddr?: string;
     notes?: string;
   }): Promise<Order> => {
     if (cart.length === 0) throw new Error('Cart is empty');
 
-    // Build a flat deliveryAddr string for legacy backend field
+    // Build a flat deliveryAddr string for the legacy backend field
     const flatAddr =
+      data.deliveryAddr ||
       data.deliveryAddress?.address ||
       [data.deliveryAddress?.street, data.deliveryAddress?.city]
         .filter(Boolean)
         .join(', ');
 
+    // ✅ Accept lat/lng from EITHER top-level OR deliveryAddress
+    const lat = data.deliveryLat ?? data.deliveryAddress?.lat ?? 0;
+    const lng = data.deliveryLng ?? data.deliveryAddress?.lng ?? 0;
+
     const payload = {
       items: cart.map((c) => ({ foodId: c.foodId, quantity: c.quantity })),
-      paymentMethod: data.paymentMethod,
+      paymentMethod: data.paymentMethod, // ✅ PaymentMethod — matches CreateOrderPayload
       deliveryAddress: data.deliveryAddress,
       deliveryAddr: flatAddr,
-      deliveryLat: data.deliveryAddress?.lat ?? 0,
-      deliveryLng: data.deliveryAddress?.lng ?? 0,
+      deliveryLat: lat,
+      deliveryLng: lng,
       notes: data.notes,
     };
 
@@ -302,13 +327,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const refreshOrders = async () => {
     try {
       const res = await orderService.getMyOrders();
-      // Backend responds: { success: true, count, data: [...] }
       setOrders(res.data || []);
     } catch (e) {
       console.log('Orders fetch error:', e);
     }
   };
 
+  // ─── Derived ───
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
   const isAdmin = user?.role === 'admin';

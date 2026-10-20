@@ -1,14 +1,20 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp, CartItem } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
-import { formatPrice } from '../utils/format';   // ✅ ETB formatter
+import { formatPrice } from '../utils/format';
 
-const DELIVERY_FEE = 150;   // ETB
+const DELIVERY_FEE = 150; // ETB
 const VAT_ENABLED = false;
 const VAT_RATE = 0.15;
 
@@ -40,9 +46,18 @@ const CartScreen = ({ navigation }: any) => {
   const renderItem = ({ item }: { item: CartItem }) => {
     const lineTotal = Number(item.price) * Number(item.quantity);
 
+    // ✅ Supports both imageUrl (new) and image (legacy) — no blank images
+    const imageUri = (item as any).imageUrl || (item as any).image || '';
+
     return (
       <View style={styles.item}>
-        <Image source={{ uri: item.image }} style={styles.itemImage} />
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.itemImage} />
+        ) : (
+          <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+            <Ionicons name="fast-food-outline" size={32} color={COLORS.gray} />
+          </View>
+        )}
         <View style={styles.itemInfo}>
           <Text style={styles.itemName} numberOfLines={1}>
             {item.name}
@@ -90,7 +105,6 @@ const CartScreen = ({ navigation }: any) => {
           <Text style={styles.emptyText}>Add items to get started</Text>
           <TouchableOpacity
             style={styles.browseBtn}
-            // ✅ FIXED: Navigate to the Home tab inside CustomerTabs
             onPress={() =>
               navigation.navigate('CustomerTabs', { screen: 'Home' })
             }
@@ -204,6 +218,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   itemImage: { width: 80, height: 80, borderRadius: SIZES.radius },
+  // ✅ placeholder for missing image
+  itemImagePlaceholder: {
+    backgroundColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   itemInfo: { flex: 1, marginLeft: SIZES.md },
   itemName: { ...FONTS.h4, color: COLORS.dark, marginBottom: 4 },
   itemPrice: {

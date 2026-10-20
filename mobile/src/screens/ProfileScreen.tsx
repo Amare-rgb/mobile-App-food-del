@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -8,16 +16,38 @@ import { COLORS, SIZES, FONTS } from '../utils/theme';
 const ProfileScreen = ({ navigation }: any) => {
   const { user, logout, orders, favorites } = useApp();
 
+  // ✅ Navigate to tabs via CustomerTabs (Orders is a tab)
+  const goToTab = (screen: 'Home' | 'Orders' | 'Cart' | 'Search') => {
+    navigation.navigate('CustomerTabs', { screen });
+  };
+
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          // AppNavigator will auto-switch to Login on `user = null`
+        },
+      },
     ]);
   };
 
-  // ✅ FULLY LINKED: Navigates to the EditProfile screen
+  // ✅ EditProfile is a root stack route
   const handleEditProfile = () => {
     navigation.navigate('EditProfile');
+  };
+
+  // ✅ Favorites is a root stack route
+  const handleFavorites = () => {
+    navigation.navigate('Favorites');
+  };
+
+  // ✅ Orders is a TAB — go through CustomerTabs
+  const handleOrders = () => {
+    goToTab('Orders');
   };
 
   const handleDeliveryAddress = () => {
@@ -49,11 +79,23 @@ const ProfileScreen = ({ navigation }: any) => {
   };
 
   const MenuItem = ({ icon, label, onPress, danger }: any) => (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.menuIcon, danger && { backgroundColor: '#FFEBEE' }]}>
-        <Ionicons name={icon} size={20} color={danger ? COLORS.danger : COLORS.primary} />
+    <TouchableOpacity
+      style={styles.menuItem}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View
+        style={[styles.menuIcon, danger && { backgroundColor: '#FFEBEE' }]}
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={danger ? COLORS.danger : COLORS.primary}
+        />
       </View>
-      <Text style={[styles.menuLabel, danger && { color: COLORS.danger }]}>{label}</Text>
+      <Text style={[styles.menuLabel, danger && { color: COLORS.danger }]}>
+        {label}
+      </Text>
       <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
     </TouchableOpacity>
   );
@@ -64,9 +106,12 @@ const ProfileScreen = ({ navigation }: any) => {
         {/* ─── Header ─── */}
         <View style={styles.header}>
           <View style={styles.avatar}>
-            {/* ✅ FIXED: Show the image if the user has one, otherwise show the initial letter */}
-            {user?.avatar ? (
-              <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+            {/* ✅ Read avatarUrl (not avatar) */}
+            {user?.avatarUrl ? (
+              <Image
+                source={{ uri: user.avatarUrl }}
+                style={styles.avatarImage}
+              />
             ) : (
               <Text style={styles.avatarText}>
                 {user?.name?.[0]?.toUpperCase() || 'U'}
@@ -74,20 +119,19 @@ const ProfileScreen = ({ navigation }: any) => {
             )}
           </View>
           <Text style={styles.name}>{user?.name || 'User'}</Text>
-          <Text style={styles.email}>{user?.email || 'user@example.com'}</Text>
+          <Text style={styles.email}>
+            {user?.email || 'user@example.com'}
+          </Text>
 
           <View style={styles.statsRow}>
-            <TouchableOpacity 
-              style={styles.statBox} 
-              onPress={() => navigation.navigate('Orders')}
-            >
+            <TouchableOpacity style={styles.statBox} onPress={handleOrders}>
               <Text style={styles.statValue}>{orders.length}</Text>
               <Text style={styles.statLabel}>Orders</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.statBox, { borderRightWidth: 0 }]} 
-              onPress={() => navigation.navigate('Favorites')}
+
+            <TouchableOpacity
+              style={[styles.statBox, { borderRightWidth: 0 }]}
+              onPress={handleFavorites}
             >
               <Text style={styles.statValue}>{favorites.length}</Text>
               <Text style={styles.statLabel}>Favorites</Text>
@@ -98,54 +142,54 @@ const ProfileScreen = ({ navigation }: any) => {
         {/* ─── Account Settings ─── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
-          <MenuItem 
-            icon="person-outline" 
-            label="Edit Profile" 
-            onPress={handleEditProfile} 
+          <MenuItem
+            icon="person-outline"
+            label="Edit Profile"
+            onPress={handleEditProfile}
           />
-          <MenuItem 
-            icon="location-outline" 
-            label="Delivery Address" 
-            onPress={handleDeliveryAddress} 
+          <MenuItem
+            icon="location-outline"
+            label="Delivery Address"
+            onPress={handleDeliveryAddress}
           />
-          <MenuItem 
-            icon="heart-outline" 
-            label="Favorites" 
-            onPress={() => navigation.navigate('Favorites')} 
+          <MenuItem
+            icon="heart-outline"
+            label="Favorites"
+            onPress={handleFavorites}
           />
-          <MenuItem 
-            icon="receipt-outline" 
-            label="Order History" 
-            onPress={() => navigation.navigate('Orders')} 
+          <MenuItem
+            icon="receipt-outline"
+            label="Order History"
+            onPress={handleOrders}
           />
         </View>
 
         {/* ─── General Settings ─── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Settings</Text>
-          <MenuItem 
-            icon="card-outline" 
-            label="Payment Methods" 
-            onPress={handlePaymentMethods} 
+          <MenuItem
+            icon="card-outline"
+            label="Payment Methods"
+            onPress={handlePaymentMethods}
           />
-          <MenuItem 
-            icon="notifications-outline" 
-            label="Notifications" 
-            onPress={handleNotifications} 
+          <MenuItem
+            icon="notifications-outline"
+            label="Notifications"
+            onPress={handleNotifications}
           />
-          <MenuItem 
-            icon="help-circle-outline" 
-            label="Help & Support" 
-            onPress={handleHelpSupport} 
+          <MenuItem
+            icon="help-circle-outline"
+            label="Help & Support"
+            onPress={handleHelpSupport}
           />
-          <MenuItem 
-            icon="log-out-outline" 
-            label="Logout" 
-            onPress={handleLogout} 
-            danger 
+          <MenuItem
+            icon="log-out-outline"
+            label="Logout"
+            onPress={handleLogout}
+            danger
           />
         </View>
-        
+
         <View style={{ height: SIZES.xl }} />
       </ScrollView>
     </SafeAreaView>
@@ -155,18 +199,21 @@ const ProfileScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.lightGray },
   header: {
-    backgroundColor: COLORS.white, 
+    backgroundColor: COLORS.white,
     alignItems: 'center',
-    paddingVertical: SIZES.xl, 
-    borderBottomLeftRadius: 24, 
+    paddingVertical: SIZES.xl,
+    borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
   avatar: {
-    width: 90, height: 90, borderRadius: 45,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: COLORS.primary,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: SIZES.md,
-    overflow: 'hidden', // ✅ Added to ensure image stays in circle
+    overflow: 'hidden',
   },
   avatarImage: {
     width: 90,
@@ -178,36 +225,40 @@ const styles = StyleSheet.create({
   email: { ...FONTS.body, color: COLORS.gray, marginBottom: SIZES.lg },
   statsRow: { flexDirection: 'row', marginTop: SIZES.sm },
   statBox: {
-    alignItems: 'center', 
+    alignItems: 'center',
     paddingHorizontal: SIZES.xl,
-    borderRightWidth: 1, 
+    borderRightWidth: 1,
     borderRightColor: COLORS.border,
   },
   statValue: { ...FONTS.h3, color: COLORS.primary },
   statLabel: { ...FONTS.small, color: COLORS.gray, marginTop: 4 },
-  section: { 
-    backgroundColor: COLORS.white, 
-    margin: SIZES.md, 
-    borderRadius: SIZES.radius, 
-    padding: SIZES.sm 
+  section: {
+    backgroundColor: COLORS.white,
+    margin: SIZES.md,
+    borderRadius: SIZES.radius,
+    padding: SIZES.sm,
   },
-  sectionTitle: { 
-    ...FONTS.small, 
-    color: COLORS.gray, 
-    marginLeft: SIZES.sm, 
-    marginTop: SIZES.sm, 
-    marginBottom: SIZES.sm, 
-    textTransform: 'uppercase' 
+  sectionTitle: {
+    ...FONTS.small,
+    color: COLORS.gray,
+    marginLeft: SIZES.sm,
+    marginTop: SIZES.sm,
+    marginBottom: SIZES.sm,
+    textTransform: 'uppercase',
   },
   menuItem: {
-    flexDirection: 'row', 
+    flexDirection: 'row',
     alignItems: 'center',
     padding: SIZES.md,
   },
   menuIcon: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FFF5F1',
-    justifyContent: 'center', alignItems: 'center', marginRight: SIZES.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SIZES.md,
   },
   menuLabel: { flex: 1, ...FONTS.body, fontWeight: '500' },
 });

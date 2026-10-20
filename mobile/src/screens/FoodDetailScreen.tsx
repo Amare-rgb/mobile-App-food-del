@@ -1,20 +1,27 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert,
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
-import { formatPrice } from '../utils/format';   // ✅ ETB formatter
+import { formatPrice } from '../utils/format';
 
+// ✅ Schema-aligned: imageUrl (not image)
 type Food = {
   id?: string;
   _id?: string;
   name: string;
   description?: string;
   price: number;
-  image: string;
+  imageUrl?: string; // ✅
   rating?: number;
   category?: string;
 };
@@ -29,18 +36,17 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
 
   const isFavorite = favorites.some((f: any) => f.foodId === foodId);
 
-  // ✅ FoodDetail lives in the root stack and Cart is a tab inside CustomerTabs,
-  // so we must navigate through the parent navigator by name.
   const goToCart = () => {
     navigation.navigate('CustomerTabs', { screen: 'Cart' });
   };
 
   const handleFavorite = async () => {
+    // ✅ imageUrl
     await toggleFavorite({
       foodId,
       name: food.name,
       price: food.price,
-      image: food.image,
+      imageUrl: food.imageUrl,
     });
   };
 
@@ -48,11 +54,12 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
     setAdding(true);
     try {
       for (let i = 0; i < quantity; i++) {
+        // ✅ imageUrl
         await addToCart({
           foodId,
           name: food.name,
           price: food.price,
-          image: food.image,
+          imageUrl: food.imageUrl,
         });
       }
 
@@ -76,7 +83,14 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
         contentContainerStyle={{ paddingBottom: SIZES.xl }}
       >
         <View>
-          <Image source={{ uri: food.image }} style={styles.image} />
+          {/* ✅ imageUrl with placeholder */}
+          {food.imageUrl ? (
+            <Image source={{ uri: food.imageUrl }} style={styles.image} />
+          ) : (
+            <View style={[styles.image, styles.imagePlaceholder]}>
+              <Ionicons name="fast-food-outline" size={64} color={COLORS.gray} />
+            </View>
+          )}
 
           {/* Back */}
           <TouchableOpacity
@@ -109,7 +123,7 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
         </View>
 
         <View style={styles.content}>
-          {/* ─── Title row with price chip ─── */}
+          {/* Title row with price chip */}
           <View style={styles.titleRow}>
             <Text style={styles.name} numberOfLines={2}>
               {food.name}
@@ -121,7 +135,7 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
             </View>
           </View>
 
-          {/* ─── Rating + category ─── */}
+          {/* Rating + category */}
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={16} color={COLORS.secondary} />
             <Text style={styles.ratingText}>
@@ -135,13 +149,13 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
             )}
           </View>
 
-          {/* ─── Description ─── */}
+          {/* Description */}
           <Text style={styles.sectionTitle}>Description</Text>
           <Text style={styles.description}>
             {food.description || 'No description available for this item.'}
           </Text>
 
-          {/* ─── Unit price line ─── */}
+          {/* Unit price */}
           <View style={styles.unitPriceRow}>
             <Ionicons name="pricetag-outline" size={16} color={COLORS.gray} />
             <Text style={styles.unitPriceText}>
@@ -149,7 +163,7 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
             </Text>
           </View>
 
-          {/* ─── Quantity ─── */}
+          {/* Quantity */}
           <View style={styles.quantityRow}>
             <Text style={styles.sectionTitle}>Quantity</Text>
             <View style={styles.quantityControl}>
@@ -176,7 +190,7 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
         </View>
       </ScrollView>
 
-      {/* ─── Footer: total + add to cart ─── */}
+      {/* Footer: total + add to cart */}
       <View style={styles.footer}>
         <View style={{ flex: 1 }}>
           <Text style={styles.totalLabel}>Total Price</Text>
@@ -200,6 +214,12 @@ const FoodDetailScreen = ({ route, navigation }: any) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
   image: { width: '100%', height: 280 },
+  // ✅ placeholder style
+  imagePlaceholder: {
+    backgroundColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   backBtn: {
     position: 'absolute',
     top: SIZES.md,
@@ -248,7 +268,6 @@ const styles = StyleSheet.create({
   cartBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
   content: { padding: SIZES.md },
 
-  // ─── Title + price chip ───
   titleRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -270,7 +289,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ─── Rating row ───
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,7 +298,6 @@ const styles = StyleSheet.create({
   metaDot: { color: COLORS.gray, marginHorizontal: 8 },
   category: { ...FONTS.body, color: COLORS.gray },
 
-  // ─── Sections ───
   sectionTitle: {
     ...FONTS.h4,
     color: COLORS.dark,
@@ -289,7 +306,6 @@ const styles = StyleSheet.create({
   },
   description: { ...FONTS.body, color: COLORS.gray, lineHeight: 22 },
 
-  // ─── Unit price ───
   unitPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -306,7 +322,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Quantity ───
   quantityRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -330,7 +345,6 @@ const styles = StyleSheet.create({
   },
   qtyText: { ...FONTS.h4, color: COLORS.dark, marginHorizontal: SIZES.md },
 
-  // ─── Footer ───
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

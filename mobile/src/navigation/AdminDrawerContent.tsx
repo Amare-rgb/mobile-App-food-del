@@ -37,7 +37,8 @@ const AdminDrawerContent: React.FC<DrawerContentComponentProps> = (props) => {
   const { user, logout } = useApp();
   const currentRoute: string = props.state.routeNames[props.state.index];
 
-  const avatarUrl = (user as any)?.avatar as string | undefined;
+  // ✅ Read avatarUrl from the User type (schema-aligned)
+  const avatarUrl = user?.avatarUrl;
 
   const handleLogout = (): void => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [

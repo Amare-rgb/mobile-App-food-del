@@ -1,40 +1,58 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  Image, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
-import api, { apiClient } from '../utils/api'; // ✅ Import default `api` for FormData
+import { apiClient } from '../utils/api';
 
 const EditProfileScreen = ({ navigation }: any) => {
-  // ✅ FIXED: Use refreshUser instead of updateUserInContext
-  const { user, refreshUser } = useApp(); 
+  const { user, refreshUser } = useApp();
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
-  const [avatar, setAvatar] = useState<string | null>(user?.avatar || null);
+  // ✅ renamed to avatarUrl + track whether the user picked a new local file
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    user?.avatarUrl || null
+  );
+  const [pickedLocalUri, setPickedLocalUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // ─── Pick Image ───
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      return Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+      return Alert.alert(
+        'Permission Denied',
+        'We need camera roll permissions to pick a photo.'
+      );
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
     });
 
-    if (!result.canceled) {
-      setAvatar(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) {
+      // ✅ preview the local image, remember it was picked
+      setPickedLocalUri(result.assets[0].uri);
+      setAvatarUrl(result.assets[0].uri);
     }
   };
 
@@ -46,41 +64,55 @@ const EditProfileScreen = ({ navigation }: any) => {
 
     setLoading(true);
     try {
-      let finalAvatarUrl = avatar;
+      let finalAvatarUrl: string | undefined = user?.avatarUrl || undefined;
 
-      // 1. Upload Avatar (if a new image was picked)
-      if (avatar && avatar !== user?.avatar) {
+      // 1. Upload avatar only if the user picked a new image
+      if (pickedLocalUri) {
         const formData = new FormData();
         formData.append('image', {
-          uri: avatar,
+          uri: pickedLocalUri,
           name: 'avatar.jpg',
           type: 'image/jpeg',
         } as any);
 
-        // ✅ FIXED: Use raw `api` instance for multipart/form-data
-        const uploadRes = await api.post('/auth/avatar', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        finalAvatarUrl = uploadRes.data.url; 
+        // ✅ NO manual Content-Type — axios adds the boundary
+        const uploadRes = await apiClient.post<any>(
+          '/auth/avatar',
+          formData
+        );
+
+        // ✅ support both `url` and `imageUrl` shapes
+        const uploadedUrl =
+          uploadRes?.url || uploadRes?.imageUrl || uploadRes?.user?.avatarUrl;
+
+        if (uploadedUrl) {
+          finalAvatarUrl = uploadedUrl;
+        } else {
+          throw new Error('Avatar upload succeeded but no URL was returned');
+        }
       }
 
-      // 2. Update Profile Data (Name, Phone, Avatar)
+      // 2. Update profile — ✅ send `avatarUrl` (not `avatar`)
       await apiClient.put('/auth/profile', {
         name: name.trim(),
         phone: phone.trim() || undefined,
-        avatar: finalAvatarUrl || undefined,
+        avatarUrl: finalAvatarUrl || undefined, // ✅
       });
 
-      // 3. Refresh the user in AppContext so the UI updates instantly
-      // ✅ FIXED: Call refreshUser() to sync with the backend
+      // 3. Sync context so all screens see the new data
       await refreshUser();
 
       Alert.alert('Success ✅', 'Profile updated successfully!');
       navigation.goBack();
-
     } catch (err: any) {
       console.error('Update Profile Error:', err);
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update profile');
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'Failed to update profile'
+      );
     } finally {
       setLoading(false);
     }
@@ -88,7 +120,10 @@ const EditProfileScreen = ({ navigation }: any) => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -98,12 +133,14 @@ const EditProfileScreen = ({ navigation }: any) => {
           <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* ─── Avatar ─── */}
           <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
-            {avatar ? (
-              <Image source={{ uri: avatar }} style={styles.avatarImage} />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Ionicons name="camera" size={30} color={COLORS.white} />
@@ -154,7 +191,6 @@ const EditProfileScreen = ({ navigation }: any) => {
               <Text style={styles.saveBtnText}>Save Changes</Text>
             )}
           </TouchableOpacity>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -173,7 +209,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...FONTS.h3, color: COLORS.dark },
   content: { padding: SIZES.lg },
-  
+
   // Avatar
   avatarContainer: {
     alignSelf: 'center',
@@ -182,24 +218,40 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: 100, height: 100, borderRadius: 50 },
   avatarPlaceholder: {
-    width: 100, height: 100, borderRadius: 50,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: COLORS.lightGray,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   editIcon: {
-    position: 'absolute', bottom: 0, right: 0,
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
     backgroundColor: COLORS.primary,
-    width: 30, height: 30, borderRadius: 15,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: COLORS.white,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
   },
   changePhotoText: {
-    ...FONTS.small, color: COLORS.primary, 
-    textAlign: 'center', marginBottom: SIZES.xl
+    ...FONTS.small,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SIZES.xl,
   },
 
   // Form
-  label: { ...FONTS.small, color: COLORS.gray, marginBottom: 6, marginTop: SIZES.md },
+  label: {
+    ...FONTS.small,
+    color: COLORS.gray,
+    marginBottom: 6,
+    marginTop: SIZES.md,
+  },
   input: {
     backgroundColor: COLORS.lightGray,
     borderRadius: SIZES.radius,

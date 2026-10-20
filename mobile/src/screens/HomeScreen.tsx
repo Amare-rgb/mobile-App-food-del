@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  FlatList, ActivityIndicator, Alert, RefreshControl,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  FlatList,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +20,8 @@ import { COLORS, SIZES, FONTS } from '../utils/theme';
 import { formatPrice } from '../utils/format';
 
 const SERVER_URL = API_URL.replace(/\/api\/?$/, '');
+
+// ✅ Accepts Cloudinary URL directly; falls back to absolute-path prefixing
 const getAvatarUri = (avatar?: string | null): string | null => {
   if (!avatar || !avatar.trim()) return null;
   if (/^(https?:|file:|content:|data:)/i.test(avatar)) return avatar;
@@ -31,21 +41,22 @@ const toList = (res: any, key?: string): any[] => {
 const norm = (s?: string) => (s || '').trim().toLowerCase();
 
 const HomeScreen = ({ navigation }: any) => {
-  const { user, refreshUser, cart } = useApp(); 
+  const { user, refreshUser, cart } = useApp();
 
   const [categories, setCategories] = useState<any[]>([]);
   const [foods, setFoods] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all'); 
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
-  const avatarUri = getAvatarUri(user?.avatar);
+  // ✅ Read avatarUrl (not avatar)
+  const avatarUri = getAvatarUri(user?.avatarUrl);
 
   useEffect(() => {
     setAvatarFailed(false);
-  }, [user?.avatar]);
+  }, [user?.avatarUrl]);
 
   const fetchData = async (showLoader = true) => {
     try {
@@ -61,7 +72,10 @@ const HomeScreen = ({ navigation }: any) => {
         setCategories(list);
         setCategoryError(null);
       } else {
-        console.error('❌ Categories fetch error:', (catResult.reason as any)?.message);
+        console.error(
+          '❌ Categories fetch error:',
+          (catResult.reason as any)?.message
+        );
         setCategoryError('Could not load categories');
       }
 
@@ -69,7 +83,10 @@ const HomeScreen = ({ navigation }: any) => {
         const list = toList(foodResult.value, 'foods');
         setFoods(list);
       } else {
-        console.error('❌ Foods fetch error:', (foodResult.reason as any)?.message);
+        console.error(
+          '❌ Foods fetch error:',
+          (foodResult.reason as any)?.message
+        );
         Alert.alert(
           'Connection Error',
           'Could not load foods. Please check your connection and try again.'
@@ -104,30 +121,49 @@ const HomeScreen = ({ navigation }: any) => {
       ? foods
       : foods.filter((f) => {
           if (f.categoryId) return f.categoryId === selectedCategory;
-          if (f.category) return norm(f.category) === norm(selectedCategoryName);
+          if (f.category)
+            return norm(f.category) === norm(selectedCategoryName);
           return false;
         });
 
-  const categoryChips = [{ id: 'all', name: 'All', icon: null }, ...categories];
+  const categoryChips = [
+    { id: 'all', name: 'All', icon: null },
+    ...categories,
+  ];
 
   const renderCategory = ({ item }: { item: any }) => {
     const key = item.id === 'all' ? 'all' : item.id;
     const isSelected = key === selectedCategory;
     return (
       <TouchableOpacity
-        style={[styles.categoryCard, isSelected && styles.categoryCardSelected]}
+        style={[
+          styles.categoryCard,
+          isSelected && styles.categoryCardSelected,
+        ]}
         onPress={() => setSelectedCategory(key)}
         activeOpacity={0.8}
       >
-        <Text style={[styles.categoryText, isSelected && styles.categoryTextSelected]}>
+        <Text
+          style={[
+            styles.categoryText,
+            isSelected && styles.categoryTextSelected,
+          ]}
+        >
           {item.name}
         </Text>
       </TouchableOpacity>
     );
   };
 
+  // ✅ Navigate to tab via CustomerTabs, not directly
+  const goToTab = (screen: 'Cart' | 'Profile' | 'Search') => {
+    navigation.navigate('CustomerTabs', { screen });
+  };
+
   const renderFood = (item: any) => {
-    const hasImage = typeof item.image === 'string' && item.image.trim().length > 0;
+    // ✅ Read imageUrl from backend (fall back to image for legacy)
+    const imageUri = item.imageUrl || item.image || '';
+    const hasImage = typeof imageUri === 'string' && imageUri.trim().length > 0;
 
     return (
       <TouchableOpacity
@@ -136,10 +172,14 @@ const HomeScreen = ({ navigation }: any) => {
         activeOpacity={0.9}
       >
         {hasImage ? (
-          <Image source={{ uri: item.image }} style={styles.foodImage} />
+          <Image source={{ uri: imageUri }} style={styles.foodImage} />
         ) : (
           <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
-            <Ionicons name="fast-food-outline" size={32} color={COLORS.gray} />
+            <Ionicons
+              name="fast-food-outline"
+              size={32}
+              color={COLORS.gray}
+            />
           </View>
         )}
 
@@ -156,7 +196,9 @@ const HomeScreen = ({ navigation }: any) => {
             <Text style={styles.foodPrice}>{formatPrice(item.price)}</Text>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color={COLORS.secondary} />
-              <Text style={styles.ratingText}>{item.rating}</Text>
+              <Text style={styles.ratingText}>
+                {Number(item.rating ?? 4.5).toFixed(1)}
+              </Text>
             </View>
           </View>
         </View>
@@ -189,43 +231,43 @@ const HomeScreen = ({ navigation }: any) => {
         {/* HEADER */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>Hello, {user?.name || 'User'}</Text>
+            <Text style={styles.greeting}>
+              Hello, {user?.name || 'User'}
+            </Text>
             <View style={styles.locationRow}>
-              <Ionicons name="location" size={16} color={COLORS.primary} />
+              <Ionicons
+                name="location"
+                size={16}
+                color={COLORS.primary}
+              />
               <Text style={styles.location}>Addis Ababa, Ethiopia</Text>
             </View>
           </View>
 
           <View style={styles.headerIcons}>
-            {/* 🛒 CART BUTTON */}
+            {/* 🛒 CART — navigate via CustomerTabs */}
             <TouchableOpacity
               style={styles.cartBtn}
-              onPress={() => {
-                try {
-                  navigation.navigate('Cart'); // Direct to tab
-                } catch (e) {
-                  console.log("Cart not found, are you an Admin?");
-                }
-              }} 
+              onPress={() => goToTab('Cart')}
             >
-              <Ionicons name="cart-outline" size={24} color={COLORS.dark} />
+              <Ionicons
+                name="cart-outline"
+                size={24}
+                color={COLORS.dark}
+              />
               {cart?.length > 0 && (
                 <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{cart.length}</Text>
+                  <Text style={styles.cartBadgeText}>
+                    {cart.length > 99 ? '99+' : cart.length}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
 
-            {/* 👤 PROFILE BUTTON */}
+            {/* 👤 PROFILE — navigate via CustomerTabs */}
             <TouchableOpacity
               style={styles.profileBtn}
-              onPress={() => {
-                try {
-                  navigation.navigate('Profile'); // Direct to tab
-                } catch (e) {
-                  console.log("Profile not found, are you an Admin?");
-                }
-              }}
+              onPress={() => goToTab('Profile')}
             >
               {avatarUri && !avatarFailed ? (
                 <Image
@@ -234,7 +276,11 @@ const HomeScreen = ({ navigation }: any) => {
                   onError={() => setAvatarFailed(true)}
                 />
               ) : (
-                <Ionicons name="person" size={22} color={COLORS.primary} />
+                <Ionicons
+                  name="person"
+                  size={22}
+                  color={COLORS.primary}
+                />
               )}
             </TouchableOpacity>
           </View>
@@ -243,13 +289,7 @@ const HomeScreen = ({ navigation }: any) => {
         {/* 🔍 SEARCH BAR */}
         <TouchableOpacity
           style={styles.searchBar}
-          onPress={() => {
-            try {
-              navigation.navigate('Search'); // Direct to tab
-            } catch (e) {
-              console.log("Search not found, are you an Admin?");
-            }
-          }}
+          onPress={() => goToTab('Search')}
           activeOpacity={0.8}
         >
           <Ionicons name="search" size={20} color={COLORS.gray} />
@@ -260,16 +300,12 @@ const HomeScreen = ({ navigation }: any) => {
         <View style={styles.banner}>
           <View style={styles.bannerContent}>
             <Text style={styles.bannerTitle}>30% OFF</Text>
-            <Text style={styles.bannerSubtitle}>On your first order</Text>
+            <Text style={styles.bannerSubtitle}>
+              On your first order
+            </Text>
             <TouchableOpacity
               style={styles.bannerBtn}
-              onPress={() => {
-                try {
-                  navigation.navigate('Search');
-                } catch (e) {
-                  console.log("Search not found");
-                }
-              }}
+              onPress={() => goToTab('Search')}
               activeOpacity={0.8}
             >
               <Text style={styles.bannerBtnText}>Order Now</Text>
@@ -283,9 +319,14 @@ const HomeScreen = ({ navigation }: any) => {
         </View>
 
         {categoryError ? (
-          <TouchableOpacity onPress={() => fetchData(false)} style={styles.errorBox}>
+          <TouchableOpacity
+            onPress={() => fetchData(false)}
+            style={styles.errorBox}
+          >
             <Ionicons name="refresh" size={16} color={COLORS.primary} />
-            <Text style={styles.errorText}>{categoryError} — tap to retry</Text>
+            <Text style={styles.errorText}>
+              {categoryError} — tap to retry
+            </Text>
           </TouchableOpacity>
         ) : (
           <FlatList
@@ -301,7 +342,9 @@ const HomeScreen = ({ navigation }: any) => {
         {/* FOODS GRID */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
-            {selectedCategory === 'all' ? 'Popular Foods' : selectedCategoryName}
+            {selectedCategory === 'all'
+              ? 'Popular Foods'
+              : selectedCategoryName}
           </Text>
         </View>
         <View style={styles.foodsGrid}>
@@ -312,7 +355,12 @@ const HomeScreen = ({ navigation }: any) => {
               </View>
             ))
           ) : (
-            <Text style={[styles.emptyText, { width: '100%', textAlign: 'center' }]}>
+            <Text
+              style={[
+                styles.emptyText,
+                { width: '100%', textAlign: 'center' },
+              ]}
+            >
               No foods available in this category
             </Text>
           )}
@@ -340,12 +388,8 @@ const styles = StyleSheet.create({
   greeting: { ...FONTS.h3 },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   location: { ...FONTS.small, marginLeft: 4, color: COLORS.gray },
-  
-  headerIcons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+
+  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   cartBtn: {
     width: 44,
     height: 44,
@@ -365,12 +409,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cartBadgeText: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  
+  cartBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
+
   profileBtn: {
     width: 44,
     height: 44,
@@ -392,7 +432,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.md,
     height: 50,
   },
-  searchPlaceholder: { ...FONTS.body, color: COLORS.gray, marginLeft: SIZES.sm },
+  searchPlaceholder: {
+    ...FONTS.body,
+    color: COLORS.gray,
+    marginLeft: SIZES.sm,
+  },
 
   banner: {
     margin: SIZES.md,
@@ -405,7 +449,12 @@ const styles = StyleSheet.create({
   },
   bannerContent: { flex: 1 },
   bannerTitle: { fontSize: 28, fontWeight: '700', color: COLORS.white },
-  bannerSubtitle: { ...FONTS.body, color: COLORS.white, opacity: 0.9, marginTop: 4 },
+  bannerSubtitle: {
+    ...FONTS.body,
+    color: COLORS.white,
+    opacity: 0.9,
+    marginTop: 4,
+  },
   bannerBtn: {
     backgroundColor: COLORS.white,
     paddingHorizontal: SIZES.md,
@@ -414,7 +463,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: SIZES.sm,
   },
-  bannerBtnText: { ...FONTS.small, color: COLORS.primary, fontWeight: '700' },
+  bannerBtnText: {
+    ...FONTS.small,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -426,7 +479,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { ...FONTS.h3 },
 
-  categoriesList: { paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm },
+  categoriesList: {
+    paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm,
+  },
   categoryCard: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -438,7 +494,11 @@ const styles = StyleSheet.create({
     minWidth: 90,
   },
   categoryCardSelected: { backgroundColor: COLORS.primary },
-  categoryText: { ...FONTS.small, color: COLORS.dark, fontWeight: '600' },
+  categoryText: {
+    ...FONTS.small,
+    color: COLORS.dark,
+    fontWeight: '600',
+  },
   categoryTextSelected: { color: COLORS.white, fontWeight: '600' },
 
   errorBox: {
@@ -449,9 +509,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightGray,
     borderRadius: SIZES.radius,
   },
-  errorText: { ...FONTS.small, color: COLORS.primary, marginLeft: 6, fontWeight: '600' },
+  errorText: {
+    ...FONTS.small,
+    color: COLORS.primary,
+    marginLeft: 6,
+    fontWeight: '600',
+  },
 
-  foodsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: SIZES.sm },
+  foodsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: SIZES.sm,
+  },
   foodGridItem: { width: '50%', padding: SIZES.sm },
   foodCard: {
     backgroundColor: COLORS.white,
@@ -481,8 +550,16 @@ const styles = StyleSheet.create({
   popularText: { fontSize: 10, color: COLORS.white, fontWeight: '600' },
   foodInfo: { padding: SIZES.sm },
   foodName: { ...FONTS.body, fontWeight: '600', marginBottom: 4 },
-  foodBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  foodPrice: { ...FONTS.body, color: COLORS.primary, fontWeight: '700' },
+  foodBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  foodPrice: {
+    ...FONTS.body,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
   ratingBadge: { flexDirection: 'row', alignItems: 'center' },
   ratingText: { ...FONTS.small, marginLeft: 2, color: COLORS.gray },
 });

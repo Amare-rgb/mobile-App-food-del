@@ -1,30 +1,46 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
-  RefreshControl, ActivityIndicator, Alert, Modal,
-  TextInput, ScrollView, Switch, KeyboardAvoidingView, Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
-import * as DocumentPicker from 'expo-document-picker';
-import { adminService } from '../../services/admin.service';
-import api from '../../utils/api';
-import { COLORS, SIZES, FONTS } from '../../utils/theme';
-import { formatPrice } from '../../utils/format';
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  TextInput,
+  ScrollView,
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import * as DocumentPicker from "expo-document-picker";
+import { adminService } from "../../services/admin.service";
+import api from "../../utils/api";
+import { COLORS, SIZES, FONTS } from "../../utils/theme";
+import { formatPrice } from "../../utils/format";
 
+// ═══════════════════════════════════════════
+// Form shape — uses `imageUrl` (matches schema)
+// ═══════════════════════════════════════════
 const emptyForm = {
-  name: '',
-  description: '',
+  name: "",
+  description: "",
   price: 0,
-  image: '',
-  categoryId: '', 
-  category: '',   
+  imageUrl: "",       // ✅ renamed from `image`
+  imagePublicId: "",  // optional — for Cloudinary cleanup
+  categoryId: "",
+  category: "",
   rating: 4.5,
   isPopular: false,
   isAvailable: true,
 };
 
-const getId = (obj: any): string => obj?.id || obj?._id || '';
+const getId = (obj: any): string => obj?.id || obj?._id || "";
 
 const AdminFoodsScreen = ({ navigation }: any) => {
   const [items, setItems] = useState<any[]>([]);
@@ -37,25 +53,29 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // 👈 New states for Category creation
+  // New category state
   const [showCatModal, setShowCatModal] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
+  const [newCatName, setNewCatName] = useState("");
   const [savingCat, setSavingCat] = useState(false);
 
   const load = async () => {
     try {
       const [foodsRes, catsRes] = await Promise.all([
-        api.get('/foods'),
-        api.get('/categories'),
+        api.get("/foods"),
+        api.get("/categories"),
       ]);
 
-      const foodsList = Array.isArray(foodsRes.data) ? foodsRes.data : foodsRes.data?.data || [];
-      const catsList = Array.isArray(catsRes.data) ? catsRes.data : catsRes.data?.data || [];
+      const foodsList = Array.isArray(foodsRes.data)
+        ? foodsRes.data
+        : foodsRes.data?.data || [];
+      const catsList = Array.isArray(catsRes.data)
+        ? catsRes.data
+        : catsRes.data?.data || [];
 
       setItems(foodsList);
       setCategories(catsList);
     } catch (err: any) {
-      console.log('Load error:', err?.response?.data || err.message);
+      console.log("Load error:", err?.response?.data || err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,11 +103,12 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   const openEdit = (item: any) => {
     setForm({
       name: item.name,
-      description: item.description,
+      description: item.description || "",
       price: item.price,
-      image: item.image,
-      categoryId: item.categoryId || '',
-      category: item.category || '',
+      imageUrl: item.imageUrl || "", // ✅ read imageUrl
+      imagePublicId: item.imagePublicId || "",
+      categoryId: item.categoryId || "",
+      category: item.category || "",
       rating: item.rating ?? 4.5,
       isPopular: item.isPopular ?? false,
       isAvailable: item.isAvailable ?? true,
@@ -97,106 +118,143 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   };
 
   // ═══════════════════════════════════════════
-  // 🆕 CREATE NEW CATEGORY FUNCTION
+  // Create category
   // ═══════════════════════════════════════════
   const handleCreateCategory = async () => {
     if (!newCatName.trim()) {
-      return Alert.alert('Error', 'Category name cannot be empty');
+      return Alert.alert("Error", "Category name cannot be empty");
     }
     setSavingCat(true);
     try {
-      const res = await api.post('/categories', { name: newCatName.trim() });
-      const newCategory = res.data; // Assuming backend returns the new category object
+      const res = await api.post("/categories", { name: newCatName.trim() });
+      const newCategory = res.data?.data || res.data;
 
-      // Refresh the categories list
-      await load(); 
-      
-      // Auto-select the new category in the form
+      await load();
+
       if (newCategory?.id) {
         setForm((f: any) => ({ ...f, categoryId: newCategory.id }));
       }
-      
+
       setShowCatModal(false);
-      setNewCatName('');
+      setNewCatName("");
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.error || 'Failed to create category');
+      Alert.alert(
+        "Error",
+        err?.response?.data?.error || "Failed to create category"
+      );
     } finally {
       setSavingCat(false);
     }
   };
 
+  // ═══════════════════════════════════════════
+  // Upload image to Cloudinary
+  // ✅ NO manual Content-Type
+  // ✅ Reads `imageUrl` from the response
+  // ═══════════════════════════════════════════
   const pickFromFiles = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'image/*',
+        type: "image/*",
         copyToCacheDirectory: true,
         multiple: false,
       });
 
       if (result.canceled) return;
-
       const file = result.assets[0];
 
       if (file.size && file.size > 5 * 1024 * 1024) {
-        return Alert.alert('File too large', 'Please pick an image under 5MB.');
+        return Alert.alert("File too large", "Please pick an image under 5MB.");
       }
 
       setUploading(true);
 
       const formData = new FormData();
-      formData.append('image', {
+      formData.append("image", {
         uri: file.uri,
         name: file.name || `food-${Date.now()}.jpg`,
-        type: file.mimeType || 'image/jpeg',
+        type: file.mimeType || "image/jpeg",
       } as any);
 
-      const res = await api.post('/foods/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      // ✅ Let axios set the multipart boundary itself
+      const res = await api.post("/foods/upload", formData, {
+        transformRequest: (d) => d,
       });
 
-      if (res.data?.url) {
-        setForm((f: any) => ({ ...f, image: res.data.url }));
-        Alert.alert('Uploaded', 'Image uploaded successfully');
+      // ✅ Cloudinary returns { message, imageUrl, publicId, size, format }
+      const uploadedUrl = res.data?.imageUrl || res.data?.url;
+      const uploadedPublicId = res.data?.publicId || res.data?.filename || "";
+
+      if (uploadedUrl) {
+        setForm((f: any) => ({
+          ...f,
+          imageUrl: uploadedUrl,
+          imagePublicId: uploadedPublicId,
+        }));
+        Alert.alert("Uploaded", "Image uploaded to Cloudinary ✅");
       } else {
-        Alert.alert('Error', 'Upload failed - no URL returned');
+        Alert.alert("Error", "Upload failed - no URL returned");
+        console.log("Upload response:", res.data);
       }
     } catch (err: any) {
-      console.log('Upload error:', err?.response?.data || err.message);
+      console.log("Upload error:", err?.response?.data || err.message);
       Alert.alert(
-        'Upload failed',
-        err?.response?.data?.message || err?.message || 'Could not upload image'
+        "Upload failed",
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Could not upload image"
       );
     } finally {
       setUploading(false);
     }
   };
 
+  // ═══════════════════════════════════════════
+  // Save (create or update)
+  // ✅ Sends `imageUrl` instead of `image`
+  // ═══════════════════════════════════════════
   const save = async () => {
-    if (!form.name || !form.image || !form.categoryId || !form.price) {
-      return Alert.alert('Error', 'Name, image, category and price are required');
+    if (!form.name || !form.imageUrl || !form.categoryId || !form.price) {
+      return Alert.alert(
+        "Error",
+        "Name, image, category and price are required"
+      );
     }
 
     const selectedCat = categories.find((c) => c.id === form.categoryId);
     const payload = {
-      ...form,
-      category: selectedCat ? selectedCat.name : form.category, 
+      name: form.name,
+      description: form.description,
+      price: Number(form.price),
+      imageUrl: form.imageUrl, // ✅ backend column
+      imagePublicId: form.imagePublicId || undefined,
+      categoryId: form.categoryId,
+      category: selectedCat ? selectedCat.name : form.category,
+      rating: Number(form.rating),
+      isPopular: Boolean(form.isPopular),
+      isAvailable: Boolean(form.isAvailable),
     };
 
     setSaving(true);
     try {
       if (editing) {
         await adminService.updateFood(editing, payload);
-        Alert.alert('Success', 'Food updated');
+        Alert.alert("Success", "Food updated");
       } else {
         await adminService.createFood(payload);
-        Alert.alert('Success', 'Food created');
+        Alert.alert("Success", "Food created");
       }
       setShowForm(false);
       load();
     } catch (err: any) {
+      console.log("Save error:", err?.response?.data || err.message);
       Alert.alert(
-        'Error',
-        err?.response?.data?.message || err?.message || 'Save failed'
+        "Error",
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Save failed"
       );
     } finally {
       setSaving(false);
@@ -204,20 +262,23 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   };
 
   const remove = (item: any) => {
-    Alert.alert('Delete?', `Delete "${item.name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert("Delete?", `Delete "${item.name}"?`, [
+      { text: "Cancel", style: "cancel" },
       {
-        text: 'Delete',
-        style: 'destructive',
+        text: "Delete",
+        style: "destructive",
         onPress: async () => {
           try {
             await adminService.deleteFood(getId(item));
-            Alert.alert('Deleted', 'Food removed');
+            Alert.alert("Deleted", "Food removed");
             load();
           } catch (err: any) {
             Alert.alert(
-              'Error',
-              err?.response?.data?.message || err?.message || 'Delete failed'
+              "Error",
+              err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                err?.message ||
+                "Delete failed"
             );
           }
         },
@@ -227,7 +288,10 @@ const AdminFoodsScreen = ({ navigation }: any) => {
 
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
-      <Image source={{ uri: item.image }} style={styles.image} />
+      <Image
+        source={{ uri: item.imageUrl || item.image }} // ✅ fallback for old data
+        style={styles.image}
+      />
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>
           {item.name}
@@ -237,10 +301,16 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         </Text>
         <Text style={styles.price}>{formatPrice(item.price)}</Text>
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => openEdit(item)}
+          >
             <Text style={styles.editText}>Edit</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.deleteBtn} onPress={() => remove(item)}>
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => remove(item)}
+          >
             <Text style={styles.deleteText}>Delete</Text>
           </TouchableOpacity>
         </View>
@@ -249,7 +319,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>Back</Text>
@@ -288,12 +358,12 @@ const AdminFoodsScreen = ({ navigation }: any) => {
       >
         <KeyboardAvoidingView
           style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editing ? 'Edit Food' : 'Add Food'}
+                {editing ? "Edit Food" : "Add Food"}
               </Text>
               <TouchableOpacity onPress={() => setShowForm(false)}>
                 <Text style={styles.closeText}>Close</Text>
@@ -310,7 +380,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                 placeholderTextColor={COLORS.gray}
               />
 
-              <Text style={styles.label}>Description *</Text>
+              <Text style={styles.label}>Description</Text>
               <TextInput
                 style={[styles.input, { height: 80 }]}
                 value={form.description}
@@ -322,9 +392,12 @@ const AdminFoodsScreen = ({ navigation }: any) => {
 
               <Text style={styles.label}>Food Image *</Text>
 
-              {form.image ? (
+              {form.imageUrl ? (
                 <View style={styles.imagePreviewBox}>
-                  <Image source={{ uri: form.image }} style={styles.preview} />
+                  <Image
+                    source={{ uri: form.imageUrl }} // ✅
+                    style={styles.preview}
+                  />
                   <TouchableOpacity
                     style={styles.changeImageBtn}
                     onPress={pickFromFiles}
@@ -341,20 +414,26 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                   {uploading ? (
                     <ActivityIndicator color={COLORS.white} />
                   ) : (
-                    <Text style={styles.uploadBtnText}>📁 Choose from Files</Text>
+                    <Text style={styles.uploadBtnText}>
+                      📁 Choose from Files
+                    </Text>
                   )}
                 </TouchableOpacity>
               )}
 
-              {/* ═══════════ CATEGORY SELECTION ═══════════ */}
+              {/* Category selection */}
               <View style={styles.catHeaderRow}>
                 <Text style={styles.label}>Category *</Text>
                 <TouchableOpacity onPress={() => setShowCatModal(true)}>
                   <Text style={styles.addCatText}>+ New Category</Text>
                 </TouchableOpacity>
               </View>
-              
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 4 }}
+              >
                 {categories.map((cat) => (
                   <TouchableOpacity
                     key={cat.id}
@@ -367,7 +446,8 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                     <Text
                       style={[
                         styles.catChipText,
-                        form.categoryId === cat.id && styles.catChipTextActive,
+                        form.categoryId === cat.id &&
+                          styles.catChipTextActive,
                       ]}
                     >
                       {cat.name}
@@ -430,7 +510,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                   <ActivityIndicator color={COLORS.white} />
                 ) : (
                   <Text style={styles.saveText}>
-                    {editing ? 'Update' : 'Create'}
+                    {editing ? "Update" : "Create"}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -441,7 +521,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ─── 🆕 New Category Modal ─── */}
+      {/* New Category Modal */}
       <Modal visible={showCatModal} transparent animationType="fade">
         <View style={styles.catModalBg}>
           <View style={styles.catModalBox}>
@@ -459,7 +539,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                 style={styles.catCancelBtn}
                 onPress={() => {
                   setShowCatModal(false);
-                  setNewCatName('');
+                  setNewCatName("");
                 }}
               >
                 <Text style={styles.catCancelText}>Cancel</Text>
@@ -483,92 +563,85 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   );
 };
 
+// ─── Styles (unchanged) ───
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.lightGray },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: SIZES.md,
     paddingVertical: SIZES.md,
     backgroundColor: COLORS.white,
   },
   title: { ...FONTS.h3, color: COLORS.dark },
-  backText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  closeText: { color: COLORS.gray, fontSize: 14, fontWeight: '600' },
+  backText: { color: COLORS.primary, fontSize: 14, fontWeight: "600" },
+  closeText: { color: COLORS.gray, fontSize: 14, fontWeight: "600" },
   addBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   addText: {
     color: COLORS.white,
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
     lineHeight: 26,
   },
   card: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: COLORS.white,
     borderRadius: SIZES.radius,
     marginBottom: SIZES.md,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   image: { width: 100, height: 100 },
   info: { flex: 1, padding: SIZES.sm },
   name: { ...FONTS.h4, color: COLORS.dark },
   meta: { ...FONTS.small, color: COLORS.gray, marginTop: 2 },
   price: { ...FONTS.h4, color: COLORS.primary, marginTop: 4 },
-  actions: { flexDirection: 'row', marginTop: SIZES.sm },
+  actions: { flexDirection: "row", marginTop: SIZES.sm },
   editBtn: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#FFF5F1',
+    backgroundColor: "#FFF5F1",
     marginRight: SIZES.sm,
   },
-  editText: {
-    ...FONTS.small,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
+  editText: { ...FONTS.small, color: COLORS.primary, fontWeight: "600" },
   deleteBtn: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#FFEBEE',
+    backgroundColor: "#FFEBEE",
   },
-  deleteText: {
-    ...FONTS.small,
-    color: COLORS.danger,
-    fontWeight: '600',
-  },
+  deleteText: { ...FONTS.small, color: COLORS.danger, fontWeight: "600" },
   empty: {
     ...FONTS.body,
     color: COLORS.gray,
-    textAlign: 'center',
+    textAlign: "center",
     padding: SIZES.xl,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: SIZES.lg,
-    maxHeight: '92%',
+    maxHeight: "92%",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: SIZES.md,
   },
   modalTitle: { ...FONTS.h3, color: COLORS.dark },
@@ -577,7 +650,7 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     marginTop: SIZES.md,
     marginBottom: 4,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   input: {
     borderWidth: 1,
@@ -589,70 +662,49 @@ const styles = StyleSheet.create({
     color: COLORS.dark,
   },
   uploadBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: COLORS.primary,
     paddingVertical: 14,
     borderRadius: SIZES.radius,
     marginTop: 4,
   },
-  uploadBtnText: {
-    ...FONTS.body,
-    color: COLORS.white,
-    fontWeight: '600',
-  },
-  imagePreviewBox: {
-    borderRadius: SIZES.radius,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  preview: {
-    width: '100%',
-    height: 180,
-  },
+  uploadBtnText: { ...FONTS.body, color: COLORS.white, fontWeight: "600" },
+  imagePreviewBox: { borderRadius: SIZES.radius, overflow: "hidden", marginTop: 4 },
+  preview: { width: "100%", height: 180 },
   changeImageBtn: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 8,
     right: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: "rgba(0,0,0,0.6)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
   },
-  changeImageText: {
-    color: COLORS.white,
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  rowInputs: { flexDirection: 'row' },
+  changeImageText: { color: COLORS.white, fontWeight: "600", fontSize: 12 },
+  rowInputs: { flexDirection: "row" },
   switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: SIZES.md,
   },
   saveBtn: {
     backgroundColor: COLORS.primary,
     paddingVertical: SIZES.md,
     borderRadius: SIZES.radius,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: SIZES.lg,
   },
   saveText: { ...FONTS.h4, color: COLORS.white },
-  
-  // ─── Category Chips Styles ───
   catHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
     marginTop: SIZES.md,
     marginBottom: 4,
   },
-  addCatText: {
-    ...FONTS.small,
-    color: COLORS.primary,
-    fontWeight: 'bold',
-  },
+  addCatText: { ...FONTS.small, color: COLORS.primary, fontWeight: "bold" },
   catChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -662,64 +714,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  catChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  catChipText: {
-    ...FONTS.small,
-    color: COLORS.dark,
-    fontWeight: '600',
-  },
-  catChipTextActive: {
-    color: COLORS.white,
-  },
-
-  // ─── New Category Modal Styles ───
+  catChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  catChipText: { ...FONTS.small, color: COLORS.dark, fontWeight: "600" },
+  catChipTextActive: { color: COLORS.white },
   catModalBg: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   catModalBox: {
-    width: '85%',
+    width: "85%",
     backgroundColor: COLORS.white,
     borderRadius: SIZES.radius,
     padding: SIZES.lg,
     elevation: 5,
   },
-  catModalTitle: {
-    ...FONTS.h3,
-    color: COLORS.dark,
-    marginBottom: SIZES.md,
-  },
+  catModalTitle: { ...FONTS.h3, color: COLORS.dark, marginBottom: SIZES.md },
   catModalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-end",
     marginTop: SIZES.lg,
     gap: 12,
   },
-  catCancelBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  catCancelText: {
-    ...FONTS.body,
-    color: COLORS.gray,
-    fontWeight: '600',
-  },
+  catCancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  catCancelText: { ...FONTS.body, color: COLORS.gray, fontWeight: "600" },
   catSaveBtn: {
     backgroundColor: COLORS.primary,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: SIZES.radius,
   },
-  catSaveText: {
-    ...FONTS.body,
-    color: COLORS.white,
-    fontWeight: '600',
-  },
+  catSaveText: { ...FONTS.body, color: COLORS.white, fontWeight: "600" },
 });
 
 export default AdminFoodsScreen;

@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, WebViewNavigation } from 'react-native-webview';
@@ -26,9 +25,11 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
 
-  // Guard: prevent duplicate verify calls when WebView fires multiple nav events
-  const verifyStartedRef = useRef(false);
+  // ✅ Guards
+  const verifyStartedRef = useRef(false);   // prevent duplicate verify
+  const verifyDoneRef = useRef(false);      // once verified, ignore WebView
   const mountedRef = useRef(true);
+  const webViewRef = useRef<WebView>(null);
 
   useEffect(() => {
     return () => {
@@ -56,7 +57,8 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
         );
         if (cancelled) return;
 
-        const body = res?.data ?? res;
+        // ✅ apiClient already unwraps r.data, so `res` IS the body
+        const body = res;
         if (!body?.checkoutUrl || !body?.txRef) {
           throw new Error(body?.message || 'Invalid response from server');
         }
@@ -80,11 +82,13 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   // ── 2) Verify after the user returns from Chapa ───────────────────
   const verify = async (ref: string) => {
-    if (verifyStartedRef.current) return;
+    // ✅ Hard guard: never verify twice or after success
+    if (verifyStartedRef.current || verifyDoneRef.current) return;
     verifyStartedRef.current = true;
 
     setVerifying(true);
@@ -92,9 +96,17 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
       const res: any = await apiClient.get<any>(
         `/payments/chapa/verify/${encodeURIComponent(ref)}`
       );
-      const body = res?.data ?? res;
+      const body = res ?? {}; // apiClient already unwrapped
 
-      if (body?.paid) {
+      // ✅ Accept any truthy form of `paid`
+      const isPaid =
+        body?.paid === true ||
+        body?.paid === 'true' ||
+        body?.paymentStatus === 'paid' ||
+        body?.status === 'success';
+
+      if (isPaid) {
+        verifyDoneRef.current = true;
         try {
           await clearCart();
         } catch {}
@@ -102,12 +114,13 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
         return;
       }
 
-      // Not paid → let the user retry or leave
+      // Not paid → allow retry
       verifyStartedRef.current = false;
       setVerifying(false);
       Alert.alert(
         'Payment Not Completed',
-        `We could not confirm your payment (${body?.reason || 'pending'
+        `We could not confirm your payment (${
+          body?.reason || 'pending'
         }). Your order is saved as unpaid.`,
         [{ text: 'OK', onPress: goHome }]
       );
@@ -117,21 +130,25 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
       Alert.alert(
         'Error',
         err?.response?.data?.message ||
+          err?.message ||
           'Could not verify payment. Check your orders later.',
         [{ text: 'OK', onPress: goHome }]
       );
     }
   };
 
-  // ── 3) Detect the return URL in the WebView ───────────────────────
+  // ── 3) Detect the return URL ───────────────────────────────────────
+  const isReturnUrl = (url: string, ref: string | null): boolean => {
+    if (!url) return false;
+    // ✅ Must contain our specific return path OR our txRef in the query
+    if (url.includes(RETURN_PATH)) return true;
+    if (ref && url.includes(`tx_ref=${ref}`)) return true;
+    return false;
+  };
+
   const onNavChange = (nav: WebViewNavigation) => {
-    if (!txRef) return;
-    // Match either our return path OR Chapa's own callback/return URLs
-    const hitReturn =
-      nav.url.includes(RETURN_PATH) ||
-      nav.url.includes('tx_ref=') ||
-      nav.url.includes('/return');
-    if (hitReturn && !verifyStartedRef.current) {
+    if (!txRef || verifyDoneRef.current) return;
+    if (isReturnUrl(nav.url, txRef)) {
       verify(txRef);
     }
   };
@@ -166,11 +183,12 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
         </View>
       ) : checkoutUrl ? (
         <WebView
+          ref={webViewRef}
           source={{ uri: checkoutUrl }}
           onNavigationStateChange={onNavChange}
-          // 👇 also catch the return URL on Android via shouldOverrideUrlLoading
           onShouldStartLoadWithRequest={(req) => {
-            if (txRef && req.url.includes(RETURN_PATH)) {
+            // ✅ Use the same strict return-url check
+            if (txRef && isReturnUrl(req.url, txRef)) {
               verify(txRef);
               return false; // don't load the tiny HTML page
             }
@@ -179,7 +197,6 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
           javaScriptEnabled
           domStorageEnabled
           thirdPartyCookiesEnabled
-          // WebView on Android sometimes needs this to allow redirects
           mixedContentMode="always"
           startInLoadingState
           renderLoading={() => (
@@ -187,8 +204,9 @@ const ChapaPaymentScreen = ({ route, navigation }: any) => {
               <ActivityIndicator size="large" color={COLORS.primary} />
             </View>
           )}
-          // Handles window.open / target=_blank from Chapa's page
           setSupportMultipleWindows={false}
+          // ✅ Android back button handled by SafeAreaView
+          allowsBackForwardNavigationGestures={false}
         />
       ) : null}
     </SafeAreaView>

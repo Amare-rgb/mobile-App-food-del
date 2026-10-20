@@ -1,13 +1,18 @@
 import React from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, Alert,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp, CartItem } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
-import { formatPrice } from '../utils/format'; // ✅ ETB formatter
+import { formatPrice } from '../utils/format';
 
 const FavoritesScreen = ({ navigation }: any) => {
   const { favorites, toggleFavorite, addToCart } = useApp();
@@ -29,11 +34,12 @@ const FavoritesScreen = ({ navigation }: any) => {
 
   const handleAddToCart = async (item: CartItem) => {
     try {
+      // ✅ use imageUrl (schema-aligned)
       await addToCart({
         foodId: item.foodId,
         name: item.name,
         price: item.price,
-        image: item.image,
+        imageUrl: item.imageUrl, // ✅
       });
       Alert.alert('Added ✅', `${item.name} added to cart`);
     } catch (err: any) {
@@ -47,12 +53,22 @@ const FavoritesScreen = ({ navigation }: any) => {
         style={styles.cardMain}
         onPress={() => navigation.navigate('FoodDetail', { food: item })}
       >
-        <Image source={{ uri: item.image }} style={styles.image} />
+        {/* ✅ use imageUrl with placeholder fallback */}
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.image} />
+        ) : (
+          <View style={[styles.image, styles.imagePlaceholder]}>
+            <Ionicons
+              name="fast-food-outline"
+              size={28}
+              color={COLORS.gray}
+            />
+          </View>
+        )}
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>
             {item.name}
           </Text>
-          {/* ✅ Changed to ETB */}
           <Text style={styles.price}>{formatPrice(item.price)}</Text>
         </View>
       </TouchableOpacity>
@@ -93,7 +109,6 @@ const FavoritesScreen = ({ navigation }: any) => {
           </Text>
           <TouchableOpacity
             style={styles.browseBtn}
-            // ✅ FIXED: Navigate to the Home tab inside CustomerTabs
             onPress={() =>
               navigation.navigate('CustomerTabs', { screen: 'Home' })
             }
@@ -144,6 +159,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   image: { width: 70, height: 70, borderRadius: SIZES.radius },
+  // ✅ placeholder for missing image
+  imagePlaceholder: {
+    backgroundColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   info: { flex: 1, marginLeft: SIZES.md },
   name: { ...FONTS.h4, color: COLORS.dark, marginBottom: 4 },
   price: { ...FONTS.body, color: COLORS.primary, fontWeight: '700' },

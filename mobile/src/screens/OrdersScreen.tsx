@@ -1,7 +1,15 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Modal, ScrollView, Image,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,34 +17,38 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useApp, Order } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
 import { formatPrice } from '../utils/format';
-import { API_URL } from '../utils/api'; // 👈 Imported API_URL to fix relative paths
+import { API_URL } from '../utils/api';
 
 const SERVER_URL = API_URL.replace(/\/api\/?$/, '');
 
-// 👈 Helper to ensure images always have the full HTTP URL
+// Helper: accepts Cloudinary URLs directly, prefixes relative paths
 const getImageUri = (imagePath?: string | null): string | null => {
   if (!imagePath || !imagePath.trim()) return null;
   if (/^(https?:|file:|content:|data:)/i.test(imagePath)) return imagePath;
   return `${SERVER_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
 };
 
-// ─── Status colors ───
+// ─── Status colors — ✅ all 8 statuses (lowercase keys) ───
 const STATUS_COLORS: Record<string, string> = {
-  PENDING: '#F5A623',
-  APPROVED: '#34C759',
-  REJECTED: '#FF3B30',
   pending: '#F5A623',
   approved: '#34C759',
   rejected: '#FF3B30',
+  preparing: '#4A90E2',
+  picked_up: '#9B59B6',
+  on_the_way: '#E67E22',
+  delivered: '#27AE60',
+  cancelled: '#7F8C8D',
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: 'Pending',
-  APPROVED: 'Approved',
-  REJECTED: 'Rejected',
   pending: 'Pending',
   approved: 'Approved',
   rejected: 'Rejected',
+  preparing: 'Preparing',
+  picked_up: 'Picked Up',
+  on_the_way: 'On the Way',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
 };
 
 const getId = (o: any): string => o?.id || o?._id || '';
@@ -101,9 +113,10 @@ const OrdersScreen = ({ navigation }: any) => {
     ) || 0;
 
   const renderItem = ({ item }: { item: any }) => {
-    const statusKey = item.status || 'PENDING';
-    const normalized = String(statusKey).toLowerCase();
+    // ✅ Normalize status to lowercase for lookup
+    const normalized = String(item.status || 'pending').toLowerCase();
     const color = STATUS_COLORS[normalized] || COLORS.gray;
+    const label = STATUS_LABELS[normalized] || normalized;
     const orderId = getId(item);
 
     return (
@@ -125,9 +138,7 @@ const OrdersScreen = ({ navigation }: any) => {
             </Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: color + '20' }]}>
-            <Text style={[styles.statusText, { color }]}>
-              {STATUS_LABELS[normalized] || normalized}
-            </Text>
+            <Text style={[styles.statusText, { color }]}>{label}</Text>
           </View>
         </View>
 
@@ -179,6 +190,10 @@ const OrdersScreen = ({ navigation }: any) => {
   }
 
   const selectedNormalized = String(selected?.status || '').toLowerCase();
+  const selectedLabel =
+    STATUS_LABELS[selectedNormalized] || selectedNormalized;
+  const selectedColor =
+    STATUS_COLORS[selectedNormalized] || COLORS.gray;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -221,29 +236,45 @@ const OrdersScreen = ({ navigation }: any) => {
                   <Text style={styles.modalId}>#{getId(selected)}</Text>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="fast-food-outline" size={16} color={COLORS.gray} />
+                    <Ionicons
+                      name="fast-food-outline"
+                      size={16}
+                      color={COLORS.gray}
+                    />
                     <Text style={styles.infoText} numberOfLines={2}>
                       {buildItemsSummary(selected)}
                     </Text>
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="calendar-outline" size={16} color={COLORS.gray} />
+                    <Ionicons
+                      name="calendar-outline"
+                      size={16}
+                      color={COLORS.gray}
+                    />
                     <Text style={styles.infoText}>
                       {formatDate(selected.createdAt)}
                     </Text>
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="time-outline" size={16} color={COLORS.gray} />
-                    <Text style={styles.infoText}>
-                      Status: {STATUS_LABELS[selectedNormalized] || selectedNormalized}
+                    <Ionicons
+                      name="time-outline"
+                      size={16}
+                      color={COLORS.gray}
+                    />
+                    <Text style={[styles.infoText, { color: selectedColor }]}>
+                      Status: {selectedLabel}
                     </Text>
                   </View>
 
                   {!!selected.deliveryAddr && (
                     <View style={styles.infoRow}>
-                      <Ionicons name="location-outline" size={16} color={COLORS.gray} />
+                      <Ionicons
+                        name="location-outline"
+                        size={16}
+                        color={COLORS.gray}
+                      />
                       <Text style={styles.infoText} numberOfLines={2}>
                         {selected.deliveryAddr}
                       </Text>
@@ -252,20 +283,31 @@ const OrdersScreen = ({ navigation }: any) => {
 
                   <Text style={styles.modalSection}>Items</Text>
                   {selected.items?.map((it: any, idx: number) => {
-                    // 👈 Fix the image URI here
-                    const imageUri = getImageUri(it.image);
+                    // ✅ Read imageUrl with fallback for legacy `image`
+                    const imageUri = getImageUri(
+                      it.imageUrl || it.image
+                    );
 
                     return (
                       <View key={idx} style={styles.itemRow}>
                         <View style={styles.itemImageContainer}>
                           {imageUri ? (
-                            <Image 
-                              source={{ uri: imageUri }} 
-                              style={styles.itemImage} 
+                            <Image
+                              source={{ uri: imageUri }}
+                              style={styles.itemImage}
                             />
                           ) : (
-                            <View style={[styles.itemImage, styles.imagePlaceholder]}>
-                              <Ionicons name="fast-food-outline" size={20} color={COLORS.gray} />
+                            <View
+                              style={[
+                                styles.itemImage,
+                                styles.imagePlaceholder,
+                              ]}
+                            >
+                              <Ionicons
+                                name="fast-food-outline"
+                                size={20}
+                                color={COLORS.gray}
+                              />
                             </View>
                           )}
                         </View>
@@ -280,12 +322,13 @@ const OrdersScreen = ({ navigation }: any) => {
                             </Text>
                           )}
                         </View>
-                        
+
                         <Text style={styles.itemPrice}>
                           {formatPrice(
                             it.lineTotal !== undefined
                               ? Number(it.lineTotal)
-                              : Number(it.price || 0) * Number(it.quantity || 1)
+                              : Number(it.price || 0) *
+                                  Number(it.quantity || 1)
                           )}
                         </Text>
                       </View>
@@ -293,7 +336,9 @@ const OrdersScreen = ({ navigation }: any) => {
                   })}
 
                   <View style={styles.totalBlock}>
-                    <View style={[styles.totalBlockRow, styles.totalBlockFinal]}>
+                    <View
+                      style={[styles.totalBlockRow, styles.totalBlockFinal]}
+                    >
                       <Text style={styles.totalBlockFinalLabel}>Total</Text>
                       <Text style={styles.totalBlockFinalValue}>
                         {formatPrice(getTotal(selected))}

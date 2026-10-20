@@ -11,7 +11,7 @@ import { COLORS, SIZES, FONTS } from '../utils/theme';
 import { formatPrice } from '../utils/format';
 
 // ═══════════════════════════════════════════
-// Payment methods for Ethiopia 🇪🇹
+// Payment methods
 // ═══════════════════════════════════════════
 type PaymentMethod = 'chapa' | 'cash';
 
@@ -36,23 +36,43 @@ const PAYMENT_METHODS: {
 ];
 
 // Match CartScreen — keep these identical
-const DELIVERY_FEE = 150;     // ETB
+const DELIVERY_FEE = 150;
 const VAT_ENABLED = false;
 const VAT_RATE = 0.15;
 
+// Default Addis Ababa coordinates — used when no GPS is available
+const DEFAULT_LAT = 9.0192;
+const DEFAULT_LNG = 38.7525;
+
 /**
  * Normalize Ethiopian phone numbers to 09xxxxxxxx / 07xxxxxxxx.
+ * Handles: +251 9..., +251 7..., 251 9..., 251 7..., 9..., 7..., 09..., 07...
  * Returns null if it can't be normalized.
  */
 const normalizeEthPhone = (raw: string): string | null => {
   const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('251') && digits.length === 12) {
+
+  // +2519xxxxxxxx or 2519xxxxxxxx → 09xxxxxxxx
+  if (digits.startsWith('2519') && digits.length === 12) {
     return '0' + digits.slice(3);
   }
+  // +2517xxxxxxxx or 2517xxxxxxxx → 07xxxxxxxx
+  if (digits.startsWith('2517') && digits.length === 12) {
+    return '0' + digits.slice(3);
+  }
+  // 9xxxxxxxx → 09xxxxxxxx
   if (digits.length === 9 && digits.startsWith('9')) {
     return '0' + digits;
   }
-  if (digits.length === 10 && (digits.startsWith('09') || digits.startsWith('07'))) {
+  // 7xxxxxxxx → 07xxxxxxxx  👈 FIXED: was missing
+  if (digits.length === 9 && digits.startsWith('7')) {
+    return '0' + digits;
+  }
+  // Already 09xxxxxxxx / 07xxxxxxxx
+  if (
+    digits.length === 10 &&
+    (digits.startsWith('09') || digits.startsWith('07'))
+  ) {
     return digits;
   }
   return null;
@@ -60,7 +80,6 @@ const normalizeEthPhone = (raw: string): string | null => {
 
 const CheckoutScreen = ({ route, navigation }: any) => {
   const { delivery = DELIVERY_FEE } = route.params || {};
-
   const { placeOrder, cart, cartTotal } = useApp();
 
   const [payment, setPayment] = useState<PaymentMethod>('cash');
@@ -70,7 +89,7 @@ const CheckoutScreen = ({ route, navigation }: any) => {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ─── Totals (single source of truth) ───
+  // ─── Totals ───
   const computedDelivery = cart.length > 0 ? delivery : 0;
   const computedVat = VAT_ENABLED ? cartTotal * VAT_RATE : 0;
   const computedTotal = cartTotal + computedDelivery + computedVat;
@@ -94,24 +113,36 @@ const CheckoutScreen = ({ route, navigation }: any) => {
 
     setLoading(true);
     try {
+      // ✅ Send both the address object AND lat/lng/addr so the courier map works
       const created = await placeOrder({
         paymentMethod: payment,
         deliveryAddress: {
           street: street.trim(),
           city: city.trim(),
-          phone: normalizedPhone, // ✅ normalized, Chapa-ready
+          phone: normalizedPhone,
         },
+        deliveryLat: DEFAULT_LAT,
+        deliveryLng: DEFAULT_LNG,
+        deliveryAddr: `${street.trim()}, ${city.trim()}`,
         notes: notes.trim() || undefined,
       });
 
-      // Loosely read the order id/total (Order type is not fully typed)
+      // ✅ Robust order id extraction (handles all possible return shapes)
       const order: any = created;
       const orderId: string =
-        order?.id || order?._id || order?.data?.id || '';
+        order?.id ||
+        order?._id ||
+        order?.data?.id ||
+        order?.data?._id ||
+        order?.order?.id ||
+        order?.order?._id ||
+        '';
+
       const orderTotal: number =
         order?.totalAmount ??
         order?.total ??
         order?.data?.totalAmount ??
+        order?.data?.total ??
         computedTotal;
 
       if (!orderId) {
@@ -119,15 +150,14 @@ const CheckoutScreen = ({ route, navigation }: any) => {
       }
 
       if (payment === 'chapa') {
-        // 💳 Online payment → open Chapa checkout
         navigation.replace('ChapaPayment', { orderId, total: orderTotal });
       } else {
-        // 💵 Cash on delivery → straight to success
         navigation.replace('OrderSuccess', { orderId, total: orderTotal });
       }
     } catch (err: any) {
       const message =
         err?.response?.data?.message ||
+        err?.response?.data?.error ||
         err?.message ||
         'Failed to place order. Please try again.';
       Alert.alert('Order Failed', message);
@@ -231,7 +261,14 @@ const CheckoutScreen = ({ route, navigation }: any) => {
           <View style={styles.card}>
             <Ionicons name="call" size={22} color={COLORS.primary} />
             <TextInput
-              style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: 'transparent' }]}
+              style={[
+                styles.input,
+                {
+                  flex: 1,
+                  marginBottom: 0,
+                  backgroundColor: 'transparent',
+                },
+              ]}
               placeholder="+251 912 345 678"
               value={phone}
               onChangeText={setPhone}
@@ -260,7 +297,10 @@ const CheckoutScreen = ({ route, navigation }: any) => {
             return (
               <TouchableOpacity
                 key={method.id}
-                style={[styles.paymentOption, selected && styles.paymentSelected]}
+                style={[
+                  styles.paymentOption,
+                  selected && styles.paymentSelected,
+                ]}
                 onPress={() => setPayment(method.id)}
                 disabled={loading}
               >
@@ -312,7 +352,9 @@ const CheckoutScreen = ({ route, navigation }: any) => {
             ) : (
               <>
                 <Ionicons
-                  name={payment === 'chapa' ? 'lock-closed' : 'checkmark-circle'}
+                  name={
+                    payment === 'chapa' ? 'lock-closed' : 'checkmark-circle'
+                  }
                   size={20}
                   color={COLORS.white}
                 />
@@ -417,10 +459,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F1',
   },
   paymentTextWrap: { flex: 1, marginLeft: SIZES.md },
-  paymentText: {
-    ...FONTS.body,
-    color: COLORS.gray,
-  },
+  paymentText: { ...FONTS.body, color: COLORS.gray },
   paymentTextSelected: { color: COLORS.dark, fontWeight: '600' },
   paymentHint: { ...FONTS.small, color: COLORS.gray, marginTop: 2 },
   footer: {
