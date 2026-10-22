@@ -64,7 +64,7 @@ const normalizeEthPhone = (raw: string): string | null => {
   if (digits.length === 9 && digits.startsWith('9')) {
     return '0' + digits;
   }
-  // 7xxxxxxxx → 07xxxxxxxx  👈 FIXED: was missing
+  // 7xxxxxxxx → 07xxxxxxxx
   if (digits.length === 9 && digits.startsWith('7')) {
     return '0' + digits;
   }
@@ -152,7 +152,12 @@ const CheckoutScreen = ({ route, navigation }: any) => {
       if (payment === 'chapa') {
         navigation.replace('ChapaPayment', { orderId, total: orderTotal });
       } else {
-        navigation.replace('OrderSuccess', { orderId, total: orderTotal });
+        // ✅ FIX: Change 'PaymentSuccess' to 'OrderSuccess'
+        navigation.replace('OrderSuccess', {
+          orderId,
+          total: orderTotal,
+          method: 'cash',
+        });
       }
     } catch (err: any) {
       const message =

@@ -12,7 +12,11 @@ router.get("/mine", orderController.listMine); // alias
 
 // 🔒 Admin only — full list, pending queue, stats
 router.get("/all", requireRole("admin"), orderController.listAll);
-router.get("/pending/list", requireRole("admin", "courier"), orderController.listPending);
+router.get(
+  "/pending/list",
+  requireRole("admin", "courier"),
+  orderController.listPending
+);
 router.get("/stats", requireRole("admin"), orderController.getStats);
 
 // ─── Create ───
@@ -22,13 +26,29 @@ router.post("/", orderController.create);
 router.get("/:id", orderController.getById);
 
 // 🛵 Couriers accept orders (admin can too, if needed)
-router.post("/:id/accept", requireRole("courier", "admin"), orderController.accept);
+router.post(
+  "/:id/accept",
+  requireRole("courier", "admin"),
+  orderController.accept
+);
 
-// Status updates — admin only (approve/reject)
-router.patch("/:id/status", requireRole("admin"), orderController.updateStatus);
-router.put("/:id/status", requireRole("admin"), orderController.updateStatus);
+// Status updates — Allow admin AND courier to update status
+router.patch(
+  "/:id/status",
+  requireRole("admin", "courier"),
+  orderController.updateStatus
+);
+router.put(
+  "/:id/status",
+  requireRole("admin", "courier"),
+  orderController.updateStatus
+);
 
-// 🗑️ Delete order — admin only
-router.delete("/:id", requireRole("admin"), orderController.deleteOrder);
+// 🗑️ Delete order — ✅ FIXED: Allow admin AND customer to call this route
+router.delete(
+  "/:id", 
+  requireRole("admin", "customer"), 
+  orderController.deleteOrder
+);
 
 module.exports = router;

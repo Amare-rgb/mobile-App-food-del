@@ -14,22 +14,8 @@ const { authenticate, requireRole } = require("../middleware/auth");
 router.get("/", getFoods);
 
 // ─── Admin only ───
-router.post(
-  "/",
-  authenticate,
-  requireRole("admin"),
-  upload.single("image"),   // ✅ parse file
-  createFood                // ✅ uses req.file.path (Cloudinary)
-);
 
-router.put(
-  "/:id",
-  authenticate,
-  requireRole("admin"),
-  upload.single("image"),   // ✅ allows replacing image
-  updateFood
-);
-
+// ✅ FIX: Placed /upload BEFORE /:id so Express doesn't confuse "upload" with an ID
 router.post(
   "/upload",
   authenticate,
@@ -38,6 +24,26 @@ router.post(
   uploadFoodImage
 );
 
+// ✅ Create Food 
+// (Controller handles req.body.imageUrl if no file, or req.file.path if file uploaded)
+router.post(
+  "/",
+  authenticate,
+  requireRole("admin"),
+  upload.single("image"),   
+  createFood                
+);
+
+// ✅ Update Food
+router.put(
+  "/:id",
+  authenticate,
+  requireRole("admin"),
+  upload.single("image"),   
+  updateFood
+);
+
+// ✅ Delete Food
 router.delete(
   "/:id",
   authenticate,

@@ -1,5 +1,5 @@
 const { prisma } = require("../lib/prisma");
-const { cloudinary } = require("../../cloudinary"); // ✅ for deleting from Cloudinary
+const cloudinary = require("cloudinary").v2;
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/foods
@@ -16,7 +16,7 @@ exports.getFoods = async (req, res) => {
       name: f.name,
       description: f.description || "",
       price: Number(f.price),
-      imageUrl: f.imageUrl || "",          // ✅ renamed from `image`
+      imageUrl: f.imageUrl || "",
       rating: Number(f.rating ?? 4.5),
       isPopular: Boolean(f.isPopular ?? false),
       isAvailable: Boolean(f.isAvailable ?? true),
@@ -33,19 +33,17 @@ exports.getFoods = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/foods
-// Accepts multipart/form-data with optional `image` file
-// OR JSON with `imageUrl` (if the client already uploaded separately)
 // ─────────────────────────────────────────────────────────────
 exports.createFood = async (req, res) => {
   try {
     const {
       name, description, price, categoryId,
-      rating, isPopular, isAvailable,
+      rating, isPopular, isAvailable, imageUrl, imagePublicId
     } = req.body;
 
-    // ✅ imageUrl comes from either the uploaded file or the body
-    const imageUrl = req.file ? req.file.path : req.body.imageUrl || null;
-    const imagePublicId = req.file ? req.file.filename : null;
+    // ✅ FIX: Check for image in req.file OR req.body.imageUrl
+    const finalImageUrl = req.file ? req.file.path : imageUrl;
+    const finalPublicId = req.file ? req.file.filename : imagePublicId;
 
     if (!name || !price || !categoryId) {
       return res.status(400).json({
@@ -53,7 +51,7 @@ exports.createFood = async (req, res) => {
       });
     }
 
-    if (!imageUrl) {
+    if (!finalImageUrl) {
       return res.status(400).json({ error: "image is required" });
     }
 
@@ -62,8 +60,8 @@ exports.createFood = async (req, res) => {
         name,
         description: description || "",
         price: Number(price),
-        imageUrl,           // ✅ Cloudinary HTTPS URL
-        imagePublicId,      // ✅ Cloudinary public_id (for later deletion)
+        imageUrl: finalImageUrl,           // ✅ Saved URL
+        imagePublicId: finalPublicId,      // ✅ Saved ID
         category: { connect: { id: categoryId } },
         rating: Number(rating ?? 4.5),
         isPopular: isPopular === "true" || isPopular === true,
@@ -87,7 +85,7 @@ exports.updateFood = async (req, res) => {
     const { id } = req.params;
     const {
       name, description, price, categoryId,
-      rating, isPopular, isAvailable,
+      rating, isPopular, isAvailable, imageUrl, imagePublicId
     } = req.body;
 
     const existing = await prisma.menuItem.findUnique({ where: { id } });
@@ -95,7 +93,6 @@ exports.updateFood = async (req, res) => {
       return res.status(404).json({ error: "Food not found" });
     }
 
-    // ✅ If a new image was uploaded, delete the old one from Cloudinary
     if (req.file && existing.imagePublicId) {
       try {
         await cloudinary.uploader.destroy(existing.imagePublicId);
@@ -118,8 +115,11 @@ exports.updateFood = async (req, res) => {
     if (req.file) {
       data.imageUrl = req.file.path;
       data.imagePublicId = req.file.filename;
-    } else if (req.body.imageUrl !== undefined) {
-      data.imageUrl = req.body.imageUrl;
+    } else if (imageUrl !== undefined) {
+      data.imageUrl = imageUrl;
+      if (imagePublicId !== undefined) {
+        data.imagePublicId = imagePublicId;
+      }
     }
 
     const updated = await prisma.menuItem.update({
@@ -137,7 +137,6 @@ exports.updateFood = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/foods/upload
-// Standalone image upload — returns the Cloudinary URL
 // ─────────────────────────────────────────────────────────────
 exports.uploadFoodImage = async (req, res) => {
   try {
@@ -145,11 +144,10 @@ exports.uploadFoodImage = async (req, res) => {
       return res.status(400).json({ error: "No image file uploaded" });
     }
 
-    // ✅ Cloudinary URL (e.g. https://res.cloudinary.com/.../food.jpg)
     return res.status(200).json({
       message: "Uploaded to Cloudinary",
-      imageUrl: req.file.path,          // full HTTPS URL
-      publicId: req.file.filename,      // Cloudinary public_id
+      imageUrl: req.file.path,
+      publicId: req.file.filename,
       size: req.file.size,
       format: req.file.format || req.file.mimetype?.split("/")[1],
     });
@@ -161,7 +159,6 @@ exports.uploadFoodImage = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // DELETE /api/foods/:id
-// Deletes the DB row AND removes the image from Cloudinary
 // ─────────────────────────────────────────────────────────────
 exports.deleteFood = async (req, res) => {
   try {
@@ -172,7 +169,6 @@ exports.deleteFood = async (req, res) => {
       return res.status(404).json({ error: "Food not found" });
     }
 
-    // ✅ Delete the image from Cloudinary first (best-effort)
     if (existing.imagePublicId) {
       try {
         await cloudinary.uploader.destroy(existing.imagePublicId);

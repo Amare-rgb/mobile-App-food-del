@@ -10,6 +10,7 @@ import {
   Modal,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useApp, Order } from '../context/AppContext';
 import { COLORS, SIZES, FONTS } from '../utils/theme';
 import { formatPrice } from '../utils/format';
-import { API_URL } from '../utils/api';
+import { API_URL, apiClient } from '../utils/api';
 
 const SERVER_URL = API_URL.replace(/\/api\/?$/, '');
 
@@ -76,6 +77,7 @@ const OrdersScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -112,12 +114,45 @@ const OrdersScreen = ({ navigation }: any) => {
       0
     ) || 0;
 
+  // ✅ Handle deleting an order
+  const handleDeleteOrder = (orderId: string) => {
+    Alert.alert(
+      'Cancel Order?',
+      'Are you sure you want to cancel this order?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingId(orderId);
+            try {
+              await apiClient.delete(`/orders/${orderId}`);
+              Alert.alert('Success', 'Order cancelled.');
+              setSelected(null); // close modal if open
+              refreshOrders(); // reload list
+            } catch (err: any) {
+              Alert.alert(
+                'Error',
+                err?.response?.data?.error || 'Failed to cancel order.'
+              );
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderItem = ({ item }: { item: any }) => {
-    // ✅ Normalize status to lowercase for lookup
     const normalized = String(item.status || 'pending').toLowerCase();
     const color = STATUS_COLORS[normalized] || COLORS.gray;
     const label = STATUS_LABELS[normalized] || normalized;
     const orderId = getId(item);
+
+    const firstItem = item.items?.[0];
+    const imageUri = getImageUri(firstItem?.imageUrl || firstItem?.image);
 
     return (
       <TouchableOpacity
@@ -126,9 +161,14 @@ const OrdersScreen = ({ navigation }: any) => {
         onPress={() => setSelected(item)}
       >
         <View style={styles.cardHeader}>
-          <View style={[styles.iconCircle, { backgroundColor: color + '20' }]}>
-            <Ionicons name="fast-food" size={22} color={color} />
-          </View>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={styles.orderImage} />
+          ) : (
+            <View style={[styles.iconCircle, { backgroundColor: color + '20' }]}>
+              <Ionicons name="fast-food" size={22} color={color} />
+            </View>
+          )}
+          
           <View style={{ flex: 1, marginLeft: SIZES.md }}>
             <Text style={styles.orderId}>
               #{String(orderId).slice(-6).toUpperCase()}
@@ -137,8 +177,24 @@ const OrdersScreen = ({ navigation }: any) => {
               {buildItemsSummary(item)}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: color + '20' }]}>
-            <Text style={[styles.statusText, { color }]}>{label}</Text>
+          
+          <View style={{ alignItems: 'flex-end' }}>
+            <View style={[styles.statusBadge, { backgroundColor: color + '20' }]}>
+              <Text style={[styles.statusText, { color }]}>{label}</Text>
+            </View>
+            {normalized === 'pending' && (
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDeleteOrder(orderId)}
+                disabled={deletingId === orderId}
+              >
+                {deletingId === orderId ? (
+                  <ActivityIndicator size="small" color={COLORS.danger} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -283,7 +339,6 @@ const OrdersScreen = ({ navigation }: any) => {
 
                   <Text style={styles.modalSection}>Items</Text>
                   {selected.items?.map((it: any, idx: number) => {
-                    // ✅ Read imageUrl with fallback for legacy `image`
                     const imageUri = getImageUri(
                       it.imageUrl || it.image
                     );
@@ -346,6 +401,23 @@ const OrdersScreen = ({ navigation }: any) => {
                     </View>
                   </View>
 
+                  {selectedNormalized === 'pending' && (
+                    <TouchableOpacity
+                      style={styles.cancelModalBtn}
+                      onPress={() => handleDeleteOrder(getId(selected))}
+                      disabled={deletingId === getId(selected)}
+                    >
+                      {deletingId === getId(selected) ? (
+                        <ActivityIndicator color={COLORS.white} />
+                      ) : (
+                        <>
+                          <Ionicons name="trash-outline" size={20} color={COLORS.white} />
+                          <Text style={styles.cancelModalBtnText}>Cancel Order</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
                   <View style={{ height: SIZES.xl }} />
                 </>
               )}
@@ -382,6 +454,12 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center' },
+  orderImage: {
+    width: 48,
+    height: 48,
+    borderRadius: SIZES.radius,
+    backgroundColor: COLORS.lightGray,
+  },
   iconCircle: {
     width: 48,
     height: 48,
@@ -400,6 +478,12 @@ const styles = StyleSheet.create({
     ...FONTS.small,
     fontWeight: '700',
     textTransform: 'capitalize',
+  },
+  deleteBtn: {
+    marginTop: 8,
+    padding: 6,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 8,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -522,6 +606,20 @@ const styles = StyleSheet.create({
   },
   totalBlockFinalLabel: { ...FONTS.h4, color: COLORS.dark },
   totalBlockFinalValue: { ...FONTS.h3, color: COLORS.primary },
+  cancelModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.danger,
+    paddingVertical: SIZES.md,
+    borderRadius: SIZES.radius,
+    marginTop: SIZES.lg,
+  },
+  cancelModalBtnText: {
+    ...FONTS.h4,
+    color: COLORS.white,
+    marginLeft: SIZES.sm,
+  },
 });
 
 export default OrdersScreen;

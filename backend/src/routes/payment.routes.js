@@ -19,14 +19,13 @@ const chapaHeaders = {
 
 /**
  * Normalize Ethiopian phone numbers to the 10-digit format Chapa expects
- * (09xxxxxxxx or 07xxxxxxxx). Returns undefined if it can't be normalized,
- * so we simply omit the field instead of sending an invalid value.
+ * (09xxxxxxxx or 07xxxxxxxx). Returns undefined if it can't be normalized.
  */
 function normalizePhone(phone) {
   if (!phone) return undefined;
   const digits = String(phone).replace(/\D/g, '');
 
-  // 2519xxxxxxxx → 09xxxxxxxx
+  // 2519xxxxxxxx / 2517xxxxxxxx → 09xxxxxxxx / 07xxxxxxxx
   if (digits.startsWith('251') && digits.length === 12) {
     return '0' + digits.slice(3);
   }
@@ -34,16 +33,22 @@ function normalizePhone(phone) {
   if (digits.length === 9 && digits.startsWith('9')) {
     return '0' + digits;
   }
+  // 7xxxxxxxx → 07xxxxxxxx
+  if (digits.length === 9 && digits.startsWith('7')) {
+    return '0' + digits;
+  }
   // Already 09xxxxxxxx or 07xxxxxxxx
-  if (digits.length === 10 && (digits.startsWith('09') || digits.startsWith('07'))) {
+  if (
+    digits.length === 10 &&
+    (digits.startsWith('09') || digits.startsWith('07'))
+  ) {
     return digits;
   }
   return undefined;
 }
 
 /**
- * Build a unique merchant reference. Combines order suffix + timestamp +
- * random suffix so retries within the same millisecond can't collide.
+ * Build a unique merchant reference.
  */
 function buildTxRef(orderId) {
   const suffix = Math.random().toString(36).slice(2, 8);
@@ -52,14 +57,26 @@ function buildTxRef(orderId) {
 
 /**
  * Asks Chapa for the real state of the payment, then updates the order.
- * Never trusts anything except what Chapa returns.
+ * Returns { paid, reason?, order?, details? } — `details` powers the
+ * client success screen.
  */
 async function verifyAndUpdate(txRef) {
   const order = await prisma.order.findUnique({ where: { txRef } });
   if (!order) return { paid: false, reason: 'Order not found', order: null };
 
+  const details = {
+    txRef,
+    orderId: order.id,
+    amount: Number(order.totalAmount),
+    currency: 'ETB',
+    method: order.paymentMethod || 'chapa',
+    paidAt: order.paidAt || null,
+  };
+
   // Already paid — idempotent
-  if (order.paymentStatus === 'paid') return { paid: true, order };
+  if (order.paymentStatus === 'paid') {
+    return { paid: true, order, details: { ...details, paidAt: order.paidAt } };
+  }
 
   let json;
   try {
@@ -69,19 +86,18 @@ async function verifyAndUpdate(txRef) {
     json = await res.json();
   } catch (err) {
     console.error('Chapa verify network error:', err);
-    return { paid: false, reason: 'network_error', order };
+    return { paid: false, reason: 'network_error', order, details };
   }
 
   const data = json && json.data;
 
-  // Guard: make sure Chapa actually returned data for OUR tx_ref
   if (!data || data.tx_ref !== txRef) {
     console.warn('Chapa verify: tx_ref mismatch or missing data', {
       expected: txRef,
       got: data && data.tx_ref,
       status: json && json.status,
     });
-    return { paid: false, reason: 'invalid_response', order };
+    return { paid: false, reason: 'invalid_response', order, details };
   }
 
   const amountMatches =
@@ -99,10 +115,13 @@ async function verifyAndUpdate(txRef) {
       where: { id: order.id },
       data: { paymentStatus: 'paid', paidAt: new Date() },
     });
-    return { paid: true, order: updated };
+    return {
+      paid: true,
+      order: updated,
+      details: { ...details, paidAt: updated.paidAt },
+    };
   }
 
-  // Persist failure/cancellation so the order reflects reality
   if (data.status === 'failed' || data.status === 'cancelled') {
     await prisma.order.update({
       where: { id: order.id },
@@ -110,11 +129,11 @@ async function verifyAndUpdate(txRef) {
     });
   }
 
-  return { paid: false, reason: data.status || 'pending', order };
+  return { paid: false, reason: data.status || 'pending', order, details };
 }
 
 // ─────────────────────────────────────────────────────────────
-// 1) Initialize payment — called by the app right after order creation
+// 1) Initialize payment
 // ─────────────────────────────────────────────────────────────
 router.post('/chapa/initialize', authenticate, async (req, res) => {
   let order = null;
@@ -140,7 +159,7 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
     const [firstName, ...rest] = fullName.trim().split(/\s+/);
 
     const payload = {
-      amount: String(order.totalAmount), // server-side amount — never from client
+      amount: String(order.totalAmount),
       currency: 'ETB',
       email: order.customer?.email,
       first_name: firstName || 'Customer',
@@ -154,8 +173,6 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
       },
     };
 
-    // Only include phone if we can normalize it — sending an invalid phone
-    // makes Chapa reject the whole request.
     const phone = normalizePhone(order.customer?.phone);
     if (phone) payload.phone_number = phone;
 
@@ -181,7 +198,6 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
         payload: { ...payload, email: '<redacted>' },
       });
 
-      // Persist the failed attempt so we know a payment was tried
       await prisma.order.update({
         where: { id: order.id },
         data: { txRef, paymentMethod: 'chapa', paymentStatus: 'failed' },
@@ -190,7 +206,6 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
       return res.status(400).json({ message: msg });
     }
 
-    // Persist the reference so verify/webhook can find the order
     await prisma.order.update({
       where: { id: order.id },
       data: { txRef, paymentMethod: 'chapa', paymentStatus: 'pending' },
@@ -203,7 +218,6 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Chapa initialize error:', err);
 
-    // Best-effort: mark as failed if we have an order + txRef
     if (order && txRef) {
       try {
         await prisma.order.update({
@@ -220,7 +234,7 @@ router.post('/chapa/initialize', authenticate, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// 2) Verify after Chapa redirects back — called by the app
+// 2) Verify — returns details for the success screen
 // ─────────────────────────────────────────────────────────────
 router.get('/chapa/verify/:txRef', authenticate, async (req, res) => {
   try {
@@ -232,7 +246,12 @@ router.get('/chapa/verify/:txRef', authenticate, async (req, res) => {
     if (!owned) return res.status(404).json({ message: 'Order not found' });
 
     const result = await verifyAndUpdate(req.params.txRef);
-    res.json({ paid: result.paid, reason: result.reason });
+
+    res.json({
+      paid: result.paid,
+      reason: result.reason,
+      details: result.details || null,
+    });
   } catch (err) {
     console.error('Chapa verify error:', err);
     res.status(500).json({ message: 'Verification failed' });
@@ -240,8 +259,7 @@ router.get('/chapa/verify/:txRef', authenticate, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// 3) Webhook — Chapa calls this after payment (backup path)
-//    Never trusts the body; only reads tx_ref, then re-verifies.
+// 3) Webhook — never trusts body; only reads tx_ref, re-verifies
 // ─────────────────────────────────────────────────────────────
 router.all('/chapa/webhook', async (req, res) => {
   try {
@@ -252,12 +270,12 @@ router.all('/chapa/webhook', async (req, res) => {
     res.sendStatus(200);
   } catch (err) {
     console.error('Chapa webhook error:', err);
-    res.sendStatus(200); // always 200 so Chapa doesn't keep retrying
+    res.sendStatus(200);
   }
 });
 
 // ─────────────────────────────────────────────────────────────
-// 4) Return page — WebView lands here; the app detects the URL and verifies
+// 4) Return page — WebView lands here
 // ─────────────────────────────────────────────────────────────
 router.get('/chapa/return', (req, res) => {
   const txRef = String(req.query.tx_ref || '');

@@ -19,12 +19,11 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-// ✅ Renamed: avatar → avatarUrl
 const updateProfileSchema = z.object({
   name: z.string().min(2).max(60).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
-  avatarUrl: z.string().url().optional(), // Cloudinary URL
+  avatarUrl: z.string().url().optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -41,7 +40,6 @@ const signToken = (user) =>
     expiresIn: "30d",
   });
 
-// ✅ Now returns `avatarUrl` (matching the schema and frontend contract)
 const sanitize = (user) => ({
   id: user.id,
   _id: user.id,
@@ -49,7 +47,7 @@ const sanitize = (user) => ({
   email: user.email,
   phone: user.phone,
   role: user.role,
-  avatarUrl: user.avatarUrl || null, // ✅ renamed
+  avatarUrl: user.avatarUrl || null,
   createdAt: user.createdAt,
 });
 
@@ -87,7 +85,7 @@ exports.signup = async (req, res) => {
         email: email.toLowerCase().trim(),
         password: hash,
         phone: phone || null,
-        role: "customer", // ✅ never trust client role
+        role: "customer", 
       },
     });
 
@@ -188,7 +186,6 @@ exports.updateProfile = async (req, res) => {
   const { name, email, phone, avatarUrl } = parsed.data;
 
   try {
-    // If email is changing, make sure it's not already taken
     if (email) {
       const existing = await prisma.user.findUnique({
         where: { email: email.toLowerCase().trim() },
@@ -207,7 +204,7 @@ exports.updateProfile = async (req, res) => {
         ...(name !== undefined && { name: name.trim() }),
         ...(email !== undefined && { email: email.toLowerCase().trim() }),
         ...(phone !== undefined && { phone }),
-        ...(avatarUrl !== undefined && { avatarUrl }), // ✅
+        ...(avatarUrl !== undefined && { avatarUrl }), 
       },
     });
 
@@ -219,31 +216,36 @@ exports.updateProfile = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// AUTHENTICATED — UPLOAD AVATAR (Cloudinary)
+// AUTHENTICATED — UPLOAD AVATAR
 // ═══════════════════════════════════════════
 exports.uploadAvatar = async (req, res) => {
   try {
+    // ✅ 1. Verify Multer received the file
     if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded" });
+      console.error("❌ Multer did not receive a file. Check upload.single('avatar')");
+      return res.status(400).json({ success: false, error: "No file uploaded", message: "No file uploaded" });
     }
 
-    // ✅ Cloudinary URL from multer-storage-cloudinary
+    // ✅ 2. Cloudinary URL from multer-storage-cloudinary
     const avatarUrl = req.file.path;
 
+    // ✅ 3. Save to database
     const user = await prisma.user.update({
       where: { id: req.user.id },
       data: { avatarUrl },
     });
 
+    // ✅ 4. Return success with all possible key names the frontend might check
     res.json({
       success: true,
       message: "Avatar updated",
       url: avatarUrl,
+      imageUrl: avatarUrl,
       user: sanitize(user),
     });
   } catch (e) {
     console.error("uploadAvatar error:", e);
-    res.status(500).json({ success: false, message: "Upload failed" });
+    res.status(500).json({ success: false, message: "Upload failed", error: "Upload failed" });
   }
 };
 
@@ -309,15 +311,12 @@ exports.saveFcmToken = async (req, res) => {
         .json({ success: false, message: "Missing token" });
     }
 
-    // ✅ fcmToken is now @unique — clear it from any other user first
-    //    (device switched accounts; we take ownership of the token)
     try {
       await prisma.user.updateMany({
         where: { fcmToken: token, NOT: { id: req.user.id } },
         data: { fcmToken: null },
       });
     } catch (cleanupErr) {
-      // non-fatal — proceed with save
       console.warn("FCM token cleanup warning:", cleanupErr.message);
     }
 
@@ -328,7 +327,6 @@ exports.saveFcmToken = async (req, res) => {
 
     res.json({ success: true, ok: true });
   } catch (e) {
-    // ✅ Handle unique violation gracefully
     if (e.code === "P2002") {
       return res.status(409).json({
         success: false,
@@ -366,7 +364,7 @@ exports.getAllUsers = async (req, res) => {
         email: true,
         phone: true,
         role: true,
-        avatarUrl: true, // ✅ renamed
+        avatarUrl: true, 
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
@@ -392,7 +390,6 @@ exports.updateUserRole = async (req, res) => {
         .json({ success: false, message: "Invalid role" });
     }
 
-    // ✅ Prevent admin from demoting themselves (locks themselves out)
     if (req.params.id === req.user.id && role !== "admin") {
       return res.status(400).json({
         success: false,

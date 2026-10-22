@@ -24,15 +24,12 @@ import api from "../../utils/api";
 import { COLORS, SIZES, FONTS } from "../../utils/theme";
 import { formatPrice } from "../../utils/format";
 
-// ═══════════════════════════════════════════
-// Form shape — uses `imageUrl` (matches schema)
-// ═══════════════════════════════════════════
 const emptyForm = {
   name: "",
   description: "",
   price: 0,
-  imageUrl: "",       // ✅ renamed from `image`
-  imagePublicId: "",  // optional — for Cloudinary cleanup
+  imageUrl: "",       
+  imagePublicId: "",  
   categoryId: "",
   category: "",
   rating: 4.5,
@@ -53,7 +50,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // New category state
   const [showCatModal, setShowCatModal] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [savingCat, setSavingCat] = useState(false);
@@ -105,7 +101,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
       name: item.name,
       description: item.description || "",
       price: item.price,
-      imageUrl: item.imageUrl || "", // ✅ read imageUrl
+      imageUrl: item.imageUrl || "",
       imagePublicId: item.imagePublicId || "",
       categoryId: item.categoryId || "",
       category: item.category || "",
@@ -117,9 +113,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
     setShowForm(true);
   };
 
-  // ═══════════════════════════════════════════
-  // Create category
-  // ═══════════════════════════════════════════
   const handleCreateCategory = async () => {
     if (!newCatName.trim()) {
       return Alert.alert("Error", "Category name cannot be empty");
@@ -147,11 +140,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
     }
   };
 
-  // ═══════════════════════════════════════════
-  // Upload image to Cloudinary
-  // ✅ NO manual Content-Type
-  // ✅ Reads `imageUrl` from the response
-  // ═══════════════════════════════════════════
   const pickFromFiles = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -176,12 +164,10 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         type: file.mimeType || "image/jpeg",
       } as any);
 
-      // ✅ Let axios set the multipart boundary itself
       const res = await api.post("/foods/upload", formData, {
         transformRequest: (d) => d,
       });
 
-      // ✅ Cloudinary returns { message, imageUrl, publicId, size, format }
       const uploadedUrl = res.data?.imageUrl || res.data?.url;
       const uploadedPublicId = res.data?.publicId || res.data?.filename || "";
 
@@ -194,26 +180,17 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         Alert.alert("Uploaded", "Image uploaded to Cloudinary ✅");
       } else {
         Alert.alert("Error", "Upload failed - no URL returned");
-        console.log("Upload response:", res.data);
       }
     } catch (err: any) {
-      console.log("Upload error:", err?.response?.data || err.message);
       Alert.alert(
         "Upload failed",
-        err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          err?.message ||
-          "Could not upload image"
+        err?.response?.data?.message || err?.message || "Could not upload image"
       );
     } finally {
       setUploading(false);
     }
   };
 
-  // ═══════════════════════════════════════════
-  // Save (create or update)
-  // ✅ Sends `imageUrl` instead of `image`
-  // ═══════════════════════════════════════════
   const save = async () => {
     if (!form.name || !form.imageUrl || !form.categoryId || !form.price) {
       return Alert.alert(
@@ -227,7 +204,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
       name: form.name,
       description: form.description,
       price: Number(form.price),
-      imageUrl: form.imageUrl, // ✅ backend column
+      imageUrl: form.imageUrl,
       imagePublicId: form.imagePublicId || undefined,
       categoryId: form.categoryId,
       category: selectedCat ? selectedCat.name : form.category,
@@ -238,11 +215,14 @@ const AdminFoodsScreen = ({ navigation }: any) => {
 
     setSaving(true);
     try {
+      // ✅ FIX: Force JSON header to prevent Multer from stripping the text body
+      const config = { headers: { "Content-Type": "application/json" } };
+
       if (editing) {
-        await adminService.updateFood(editing, payload);
+        await api.put(`/foods/${editing}`, payload, config);
         Alert.alert("Success", "Food updated");
       } else {
-        await adminService.createFood(payload);
+        await api.post("/foods", payload, config);
         Alert.alert("Success", "Food created");
       }
       setShowForm(false);
@@ -289,7 +269,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <Image
-        source={{ uri: item.imageUrl || item.image }} // ✅ fallback for old data
+        source={{ uri: item.imageUrl || item.image }}
         style={styles.image}
       />
       <View style={styles.info}>
@@ -349,7 +329,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         />
       )}
 
-      {/* ─── Form Modal ─── */}
       <Modal
         visible={showForm}
         animationType="slide"
@@ -395,7 +374,7 @@ const AdminFoodsScreen = ({ navigation }: any) => {
               {form.imageUrl ? (
                 <View style={styles.imagePreviewBox}>
                   <Image
-                    source={{ uri: form.imageUrl }} // ✅
+                    source={{ uri: form.imageUrl }}
                     style={styles.preview}
                   />
                   <TouchableOpacity
@@ -421,7 +400,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
                 </TouchableOpacity>
               )}
 
-              {/* Category selection */}
               <View style={styles.catHeaderRow}>
                 <Text style={styles.label}>Category *</Text>
                 <TouchableOpacity onPress={() => setShowCatModal(true)}>
@@ -521,7 +499,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* New Category Modal */}
       <Modal visible={showCatModal} transparent animationType="fade">
         <View style={styles.catModalBg}>
           <View style={styles.catModalBox}>
@@ -563,7 +540,6 @@ const AdminFoodsScreen = ({ navigation }: any) => {
   );
 };
 
-// ─── Styles (unchanged) ───
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.lightGray },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },

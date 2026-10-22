@@ -24,7 +24,6 @@ const EditProfileScreen = ({ navigation }: any) => {
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
-  // ✅ renamed to avatarUrl + track whether the user picked a new local file
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     user?.avatarUrl || null
   );
@@ -33,8 +32,7 @@ const EditProfileScreen = ({ navigation }: any) => {
 
   // ─── Pick Image ───
   const pickImage = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       return Alert.alert(
         'Permission Denied',
@@ -43,14 +41,13 @@ const EditProfileScreen = ({ navigation }: any) => {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
     });
 
     if (!result.canceled && result.assets[0]) {
-      // ✅ preview the local image, remember it was picked
       setPickedLocalUri(result.assets[0].uri);
       setAvatarUrl(result.assets[0].uri);
     }
@@ -66,24 +63,38 @@ const EditProfileScreen = ({ navigation }: any) => {
     try {
       let finalAvatarUrl: string | undefined = user?.avatarUrl || undefined;
 
-      // 1. Upload avatar only if the user picked a new image
+      // 1. Upload avatar if a new one was picked
       if (pickedLocalUri) {
         const formData = new FormData();
-        formData.append('image', {
-          uri: pickedLocalUri,
+        
+        // Fix Android/iOS URI format
+        const cleanUri = Platform.OS === 'android' 
+          ? pickedLocalUri 
+          : pickedLocalUri.replace('file://', '');
+
+        formData.append('avatar', {
+          uri: cleanUri,
           name: 'avatar.jpg',
           type: 'image/jpeg',
         } as any);
 
-        // ✅ NO manual Content-Type — axios adds the boundary
-        const uploadRes = await apiClient.post<any>(
-          '/auth/avatar',
-          formData
-        );
+        console.log('📤 Uploading avatar via Axios...');
+        
+        // ✅ The CRITICAL FIX: transformRequest keeps the FormData intact
+        const uploadRes = await apiClient.post<any>('/auth/avatar', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          transformRequest: (data) => data,
+        });
 
-        // ✅ support both `url` and `imageUrl` shapes
+        console.log('✅ Upload Response:', uploadRes);
+
         const uploadedUrl =
-          uploadRes?.url || uploadRes?.imageUrl || uploadRes?.user?.avatarUrl;
+          uploadRes?.url || 
+          uploadRes?.imageUrl || 
+          uploadRes?.user?.avatarUrl ||
+          uploadRes?.data?.url;
 
         if (uploadedUrl) {
           finalAvatarUrl = uploadedUrl;
@@ -92,26 +103,22 @@ const EditProfileScreen = ({ navigation }: any) => {
         }
       }
 
-      // 2. Update profile — ✅ send `avatarUrl` (not `avatar`)
+      // 2. Update text profile data
       await apiClient.put('/auth/profile', {
         name: name.trim(),
         phone: phone.trim() || undefined,
-        avatarUrl: finalAvatarUrl || undefined, // ✅
+        avatarUrl: finalAvatarUrl || undefined, 
       });
 
-      // 3. Sync context so all screens see the new data
+      // 3. Sync context
       await refreshUser();
-
       Alert.alert('Success ✅', 'Profile updated successfully!');
       navigation.goBack();
     } catch (err: any) {
       console.error('Update Profile Error:', err);
       Alert.alert(
         'Error',
-        err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          err?.message ||
-          'Failed to update profile'
+        err?.response?.data?.message || err?.message || 'Failed to update profile'
       );
     } finally {
       setLoading(false);
@@ -124,7 +131,6 @@ const EditProfileScreen = ({ navigation }: any) => {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color={COLORS.dark} />
@@ -137,7 +143,6 @@ const EditProfileScreen = ({ navigation }: any) => {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ─── Avatar ─── */}
           <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
@@ -146,13 +151,15 @@ const EditProfileScreen = ({ navigation }: any) => {
                 <Ionicons name="camera" size={30} color={COLORS.white} />
               </View>
             )}
+            
+            {/* ✅ Plus Icon (+) instead of Pencil */}
             <View style={styles.editIcon}>
-              <Ionicons name="pencil" size={14} color={COLORS.white} />
+              <Ionicons name="add" size={20} color={COLORS.white} />
             </View>
+            
           </TouchableOpacity>
           <Text style={styles.changePhotoText}>Change Photo</Text>
 
-          {/* ─── Form ─── */}
           <Text style={styles.label}>Full Name</Text>
           <TextInput
             style={styles.input}
@@ -179,7 +186,6 @@ const EditProfileScreen = ({ navigation }: any) => {
             <Text style={{ color: COLORS.gray }}>{user?.email}</Text>
           </View>
 
-          {/* ─── Save Button ─── */}
           <TouchableOpacity
             style={[styles.saveBtn, loading && { opacity: 0.6 }]}
             onPress={handleSave}
@@ -210,7 +216,6 @@ const styles = StyleSheet.create({
   headerTitle: { ...FONTS.h3, color: COLORS.dark },
   content: { padding: SIZES.lg },
 
-  // Avatar
   avatarContainer: {
     alignSelf: 'center',
     marginBottom: SIZES.sm,
@@ -230,9 +235,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     backgroundColor: COLORS.primary,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -245,7 +250,6 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xl,
   },
 
-  // Form
   label: {
     ...FONTS.small,
     color: COLORS.gray,

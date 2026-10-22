@@ -16,7 +16,7 @@ import { COLORS, SIZES, FONTS } from '../utils/theme';
 const ProfileScreen = ({ navigation }: any) => {
   const { user, logout, orders, favorites } = useApp();
 
-  // ✅ Navigate to tabs via CustomerTabs (Orders is a tab)
+  // ✅ Navigate to tabs via CustomerTabs
   const goToTab = (screen: 'Home' | 'Orders' | 'Cart' | 'Search') => {
     navigation.navigate('CustomerTabs', { screen });
   };
@@ -29,23 +29,19 @@ const ProfileScreen = ({ navigation }: any) => {
         style: 'destructive',
         onPress: async () => {
           await logout();
-          // AppNavigator will auto-switch to Login on `user = null`
         },
       },
     ]);
   };
 
-  // ✅ EditProfile is a root stack route
   const handleEditProfile = () => {
     navigation.navigate('EditProfile');
   };
 
-  // ✅ Favorites is a root stack route
   const handleFavorites = () => {
     navigation.navigate('Favorites');
   };
 
-  // ✅ Orders is a TAB — go through CustomerTabs
   const handleOrders = () => {
     goToTab('Orders');
   };
@@ -106,7 +102,6 @@ const ProfileScreen = ({ navigation }: any) => {
         {/* ─── Header ─── */}
         <View style={styles.header}>
           <View style={styles.avatar}>
-            {/* ✅ Read avatarUrl (not avatar) */}
             {user?.avatarUrl ? (
               <Image
                 source={{ uri: user.avatarUrl }}

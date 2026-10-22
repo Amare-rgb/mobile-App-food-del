@@ -12,7 +12,8 @@ import { COLORS, SIZES, FONTS } from '../utils/theme';
 import { formatPrice } from '../utils/format';
 
 const OrderSuccessScreen = ({ route, navigation }: any) => {
-  const { orderId, total } = route.params || {};
+  // Accept both total and the new details from Chapa
+  const { orderId, total, txRef, method, paidAt } = route.params || {};
 
   const scale = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -34,6 +35,8 @@ const OrderSuccessScreen = ({ route, navigation }: any) => {
   }, [scale, opacity]);
 
   const shortId = orderId ? String(orderId).slice(-6).toUpperCase() : null;
+  const isChapa = method?.toLowerCase() === 'chapa' || !!txRef;
+  const methodLabel = isChapa ? 'Chapa (Online)' : 'Cash on Delivery';
 
   // ✅ Reset stack so back doesn't return to payment/checkout
   const goToTab = (screen: 'Home' | 'Orders') => {
@@ -52,31 +55,48 @@ const OrderSuccessScreen = ({ route, navigation }: any) => {
           <Ionicons name="checkmark" size={60} color={COLORS.white} />
         </Animated.View>
 
-        <Text style={styles.title}>Order Placed!</Text>
+        <Text style={styles.title}>Payment Successful</Text>
         <Text style={styles.subtitle}>
-          Your order has been received and is being prepared. You'll get it
-          soon!
+          Your order has been confirmed and is being prepared. You'll get it soon!
         </Text>
 
-        {(shortId || typeof total === 'number') && (
-          <View style={styles.infoCard}>
-            {shortId && (
+        {/* ─── Transaction Summary Card ─── */}
+        <View style={styles.infoCard}>
+          {shortId && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Order ID</Text>
+              <Text style={styles.infoValue}>#{shortId}</Text>
+            </View>
+          )}
+
+          {isChapa && txRef && (
+            <>
+              <View style={styles.infoDivider} />
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Order ID</Text>
-                <Text style={styles.infoValue}>#{shortId}</Text>
+                <Text style={styles.infoLabel}>Transaction Ref</Text>
+                <Text style={[styles.infoValue, styles.mono]} numberOfLines={1} ellipsizeMode="middle">
+                  {txRef}
+                </Text>
               </View>
-            )}
-            {typeof total === 'number' && (
-              <>
-                <View style={styles.infoDivider} />
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Total</Text>
-                  <Text style={styles.infoTotal}>{formatPrice(total)}</Text>
-                </View>
-              </>
-            )}
+            </>
+          )}
+
+          <View style={styles.infoDivider} />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Payment Method</Text>
+            <Text style={styles.infoValue}>{methodLabel}</Text>
           </View>
-        )}
+
+          {typeof total === 'number' && (
+            <>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Total Amount</Text>
+                <Text style={styles.infoTotal}>{formatPrice(total)}</Text>
+              </View>
+            </>
+          )}
+        </View>
 
         <TouchableOpacity
           style={styles.primaryBtn}
@@ -113,10 +133,15 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: COLORS.success, // ⚠️ must exist in theme.ts
+    backgroundColor: '#22C55E', // Use exact green for success
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SIZES.xl,
+    shadowColor: '#22C55E',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
 
   title: { ...FONTS.h1, marginBottom: SIZES.sm, color: COLORS.dark },
@@ -125,6 +150,7 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     textAlign: 'center',
     marginBottom: SIZES.xl,
+    paddingHorizontal: SIZES.sm,
   },
 
   infoCard: {
@@ -138,19 +164,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
   infoLabel: { ...FONTS.body, color: COLORS.gray },
   infoValue: {
-    ...FONTS.h4,
+    ...FONTS.body,
     color: COLORS.dark,
+    fontWeight: '600',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  mono: {
     fontFamily: 'monospace',
+    fontSize: 12,
+    letterSpacing: 0.5,
   },
   infoTotal: { ...FONTS.h3, color: COLORS.primary },
   infoDivider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginVertical: 4,
+    marginVertical: 2,
   },
 
   primaryBtn: {

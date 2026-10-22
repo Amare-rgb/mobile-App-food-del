@@ -1,22 +1,16 @@
-import axios from "axios";
+import axios, { AxiosRequestConfig } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 // ═══════════════════════════════════════════════════════════
-// 🌐 API URL — Production + Dev (Expo Go + Emulator + Device)
+// 🌐 API URL — Production + Dev
 // ═══════════════════════════════════════════════════════════
 
-// 🔴 Production backend (Fly.io) — used in release builds
 const PRODUCTION_API_URL = "https://food-del-backend.fly.dev/api";
-
 const API_PORT = 4000;
 
-// Set this to true ONLY when you want to force localhost
-const FORCE_LOCAL = false;
-
 const getBaseUrl = (): string => {
-  // 1) Explicit override via Expo extra (app.config.js → extra.apiUrl)
   const override =
     Constants.expoConfig?.extra?.apiUrl ??
     (Constants as any).manifest?.extra?.apiUrl;
@@ -24,13 +18,10 @@ const getBaseUrl = (): string => {
     return override;
   }
 
-  // 2) Production build (EAS / store / TestFlight) → use Fly.io
-  //    __DEV__ is false in release builds
-  if (!__DEV__ || FORCE_LOCAL === false && !__DEV__) {
+  if (!__DEV__) {
     return PRODUCTION_API_URL;
   }
 
-  // 3) Dev: try to auto-detect the PC's IP from Expo
   const hostUri: string | undefined =
     Constants.expoConfig?.hostUri ??
     (Constants as any).expoGoConfig?.debuggerHost ??
@@ -39,18 +30,15 @@ const getBaseUrl = (): string => {
 
   if (hostUri) {
     const ip = hostUri.split(":")[0];
-    // If Expo is running on your LAN, hit your PC
     if (ip && ip !== "localhost" && ip !== "127.0.0.1") {
       return `http://${ip}:${API_PORT}/api`;
     }
   }
 
-  // 4) Android emulator special case
   if (Platform.OS === "android") {
     return `http://10.0.2.2:${API_PORT}/api`;
   }
 
-  // 5) iOS simulator / web fallback
   return `http://localhost:${API_PORT}/api`;
 };
 
@@ -61,30 +49,57 @@ console.log("🌐 [API] __DEV__:", __DEV__);
 
 // ═══════════════════════════════════════════════════════════
 // Axios instance
+// (no default Content-Type here — it is set per request below)
 // ═══════════════════════════════════════════════════════════
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 20000,                 // ↑ was 15s — Fly.io cold starts can exceed it
+  timeout: 30000,
   headers: {
-    "Content-Type": "application/json",
     Accept: "application/json",
   },
 });
 
-// ─── Request interceptor — attach JWT ───
+// ─── Request interceptor ───
 api.interceptors.request.use(
   async (config) => {
     try {
       const token = await AsyncStorage.getItem("token");
       if (token) {
-        config.headers = config.headers || {};
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers = config.headers || ({} as any);
+        (config.headers as any).Authorization = `Bearer ${token}`;
       }
     } catch (e) {
       console.log("⚠️ [API] Token read error:", e);
     }
+
+    const headers: any = config.headers;
+    const isFormData =
+      typeof FormData !== "undefined" && config.data instanceof FormData;
+
+    if (isFormData) {
+      // Remove every possible Content-Type so React Native sets
+      // multipart/form-data WITH the correct boundary itself.
+      if (typeof headers.delete === "function") {
+        headers.delete("Content-Type");
+        headers.delete("content-type");
+      }
+      delete headers["Content-Type"];
+      delete headers["content-type"];
+      delete headers.common?.["Content-Type"];
+      delete headers.post?.["Content-Type"];
+      delete headers.put?.["Content-Type"];
+
+      // Don't let Axios try to serialize FormData
+      config.transformRequest = [(data) => data];
+      // Uploads can be slow
+      config.timeout = Math.max(config.timeout ?? 0, 60000);
+    } else if (config.data !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+
     console.log(
-      `📤 [API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
+      `📤 [API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}` +
+        (isFormData ? " (multipart)" : "")
     );
     return config;
   },
@@ -108,7 +123,10 @@ api.interceptors.response.use(
       }
     } else if (error.request) {
       console.log("❌ [API] Network Error — no response from server");
-      console.log("   URL:", (error.config?.baseURL || "") + (error.config?.url || ""));
+      console.log(
+        "   URL:",
+        (error.config?.baseURL || "") + (error.config?.url || "")
+      );
       console.log("   Hint: Fly.io app may be asleep — first request can take ~5s");
     } else {
       console.log("❌ [API] Setup error:", error.message);
@@ -118,27 +136,46 @@ api.interceptors.response.use(
 );
 
 // ═══════════════════════════════════════════════════════════
-// Typed helpers
+// Typed helpers (return res.data)
 // ═══════════════════════════════════════════════════════════
 export const apiClient = {
-  get: async <T = any>(url: string, params?: object): Promise<T> => {
-    const res = await api.get<T>(url, { params });
+  get: async <T = any>(
+    url: string,
+    params?: object,
+    config?: AxiosRequestConfig
+  ): Promise<T> => {
+    const res = await api.get<T>(url, { ...config, params });
     return res.data;
   },
-  post: async <T = any>(url: string, body?: object): Promise<T> => {
-    const res = await api.post<T>(url, body);
+  post: async <T = any>(
+    url: string,
+    body?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> => {
+    const res = await api.post<T>(url, body, config);
     return res.data;
   },
-  put: async <T = any>(url: string, body?: object): Promise<T> => {
-    const res = await api.put<T>(url, body);
+  put: async <T = any>(
+    url: string,
+    body?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> => {
+    const res = await api.put<T>(url, body, config);
     return res.data;
   },
-  patch: async <T = any>(url: string, body?: object): Promise<T> => {
-    const res = await api.patch<T>(url, body);
+  patch: async <T = any>(
+    url: string,
+    body?: any,
+    config?: AxiosRequestConfig
+  ): Promise<T> => {
+    const res = await api.patch<T>(url, body, config);
     return res.data;
   },
-  delete: async <T = any>(url: string): Promise<T> => {
-    const res = await api.delete<T>(url);
+  delete: async <T = any>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Promise<T> => {
+    const res = await api.delete<T>(url, config);
     return res.data;
   },
 };
@@ -147,24 +184,17 @@ export const apiClient = {
 // Endpoints
 // ═══════════════════════════════════════════════════════════
 export const ENDPOINTS = {
-  // Auth
   LOGIN: "/auth/login",
   REGISTER: "/auth/register",
   ME: "/auth/me",
   AVATAR: "/auth/avatar",
   FCM_TOKEN: "/auth/fcm-token",
-
-  // Menu
   FOODS: "/foods",
   CATEGORIES: "/categories",
-
-  // Orders
   MY_ORDERS: "/orders/my",
   ALL_ORDERS: "/orders/all",
   ORDER_STATS: "/orders/stats",
   CREATE_ORDER: "/orders",
-
-  // Payments
   CHAPA_INIT: "/payments/chapa/initialize",
   CHAPA_VERIFY: (txRef: string) => `/payments/chapa/verify/${txRef}`,
 };

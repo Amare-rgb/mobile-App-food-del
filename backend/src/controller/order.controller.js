@@ -20,42 +20,18 @@ const createSchema = z.object({
   deliveryLat: z.number().optional(),
   deliveryLng: z.number().optional(),
   deliveryAddr: z.string().optional(),
-  totalAmount: z.number().positive().optional(), // ignored server-side (we recompute)
+  totalAmount: z.number().positive().optional(),
 });
 
-// ✅ Now accepts every status in the OrderStatus enum (case-insensitive)
 const statusSchema = z.object({
   status: z.enum([
-    "pending",
-    "approved",
-    "rejected",
-    "preparing",
-    "picked_up",
-    "on_the_way",
-    "delivered",
-    "cancelled",
-    // uppercase aliases for legacy clients
-    "PENDING",
-    "APPROVED",
-    "REJECTED",
-    "PREPARING",
-    "PICKED_UP",
-    "ON_THE_WAY",
-    "DELIVERED",
-    "CANCELLED",
+    "pending", "approved", "rejected", "preparing", "picked_up", "on_the_way", "delivered", "cancelled",
+    "PENDING", "APPROVED", "REJECTED", "PREPARING", "PICKED_UP", "ON_THE_WAY", "DELIVERED", "CANCELLED",
   ]),
 });
 
-// ✅ Full list — must match the Prisma enum
 const VALID_STATUSES = [
-  "pending",
-  "approved",
-  "rejected",
-  "preparing",
-  "picked_up",
-  "on_the_way",
-  "delivered",
-  "cancelled",
+  "pending", "approved", "rejected", "preparing", "picked_up", "on_the_way", "delivered", "cancelled",
 ];
 
 // ═══════════════════════════════════════════
@@ -70,7 +46,6 @@ async function enrichItems(rawItems) {
 
   const foods = await prisma.menuItem.findMany({
     where: { id: { in: foodIds } },
-    // ✅ imageUrl, not image
     select: { id: true, name: true, price: true, imageUrl: true },
   });
   const map = new Map(foods.map((f) => [f.id, f]));
@@ -84,7 +59,6 @@ async function enrichItems(rawItems) {
       quantity,
       name: food?.name || i.name || "Item",
       price,
-      // ✅ imageUrl from DB or from stored snapshot
       imageUrl: food?.imageUrl || i.imageUrl || null,
       lineTotal: price * quantity,
     };
@@ -106,7 +80,6 @@ const transformOrder = (o, enrichedItems) => ({
   totalAmount: o.totalAmount,
   paymentMethod: o.paymentMethod || "cash",
   paymentStatus: o.paymentStatus || "pending",
-  // ✅ expose Chapa metadata so the app can show "Paid ✅ / Unpaid"
   txRef: o.txRef || null,
   paidAt: o.paidAt || null,
   notes: o.notes || null,
@@ -137,39 +110,30 @@ exports.create = async (req, res) => {
       return res.status(400).json({ error: "No valid food items found" });
     }
 
-    // Validate every foodId exists & is available
     const foodMap = new Map(foods.map((f) => [f.id, f]));
     for (const item of items) {
       const food = foodMap.get(item.foodId);
       if (!food) {
-        return res
-          .status(400)
-          .json({ error: `Food ${item.foodId} not found` });
+        return res.status(400).json({ error: `Food ${item.foodId} not found` });
       }
       if (food.isAvailable === false) {
-        return res
-          .status(400)
-          .json({ error: `${food.name} is currently unavailable` });
+        return res.status(400).json({ error: `${food.name} is currently unavailable` });
       }
     }
 
-    // ✅ Server-side price calculation — never trust client totalAmount
     const totalAmount = items.reduce((sum, item) => {
       const food = foodMap.get(item.foodId);
       return sum + (food ? Number(food.price) * item.quantity : 0);
     }, 0);
 
-    const deliveryLat =
-      parsed.data.deliveryLat ?? deliveryAddress?.lat ?? 0;
-    const deliveryLng =
-      parsed.data.deliveryLng ?? deliveryAddress?.lng ?? 0;
+    const deliveryLat = parsed.data.deliveryLat ?? deliveryAddress?.lat ?? 0;
+    const deliveryLng = parsed.data.deliveryLng ?? deliveryAddress?.lng ?? 0;
     const deliveryAddr =
       parsed.data.deliveryAddr ??
       deliveryAddress?.address ??
       deliveryAddress?.addr ??
       "";
 
-    // ✅ Snapshot items so they survive menu changes
     const itemsSnapshot = items.map((i) => {
       const food = foodMap.get(i.foodId);
       return {
@@ -236,7 +200,7 @@ exports.listMine = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// LIST PENDING (approved & unassigned → courier can accept)
+// LIST PENDING
 // ═══════════════════════════════════════════
 exports.listPending = async (_req, res) => {
   try {
@@ -252,14 +216,12 @@ exports.listPending = async (_req, res) => {
     res.json({ success: true, count: data.length, data });
   } catch (e) {
     console.error("listPending error:", e);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to load pending orders" });
+    res.status(500).json({ success: false, message: "Failed to load pending orders" });
   }
 };
 
 // ═══════════════════════════════════════════
-// LIST ALL (admin)
+// LIST ALL
 // ═══════════════════════════════════════════
 exports.listAll = async (req, res) => {
   try {
@@ -268,9 +230,7 @@ exports.listAll = async (req, res) => {
     if (status) {
       const s = String(status).toLowerCase();
       if (!VALID_STATUSES.includes(s)) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid status filter" });
+        return res.status(400).json({ success: false, message: "Invalid status filter" });
       }
       where.status = s;
     }
@@ -279,9 +239,7 @@ exports.listAll = async (req, res) => {
       where,
       include: {
         courier: { select: { id: true, name: true, phone: true } },
-        customer: {
-          select: { id: true, name: true, email: true, phone: true },
-        },
+        customer: { select: { id: true, name: true, email: true, phone: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -297,25 +255,15 @@ exports.listAll = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// STATS (admin)
+// STATS
 // ═══════════════════════════════════════════
 exports.getStats = async (_req, res) => {
   try {
     const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
 
     const [
-      totalOrders,
-      pending,
-      approved,
-      rejected,
-      preparing,
-      pickedUp,
-      onTheWay,
-      delivered,
-      cancelled,
-      revenueAgg,
-      todayOrders,
-      todayRevenueAgg,
+      totalOrders, pending, approved, rejected, preparing, pickedUp, onTheWay,
+      delivered, cancelled, revenueAgg, todayOrders, todayRevenueAgg,
     ] = await Promise.all([
       prisma.order.count(),
       prisma.order.count({ where: { status: "pending" } }),
@@ -326,7 +274,6 @@ exports.getStats = async (_req, res) => {
       prisma.order.count({ where: { status: "on_the_way" } }),
       prisma.order.count({ where: { status: "delivered" } }),
       prisma.order.count({ where: { status: "cancelled" } }),
-      // ✅ Revenue = approved + anything beyond (i.e. real, non-cancelled orders)
       prisma.order.aggregate({
         _sum: { totalAmount: true },
         where: { status: { in: ["approved", "preparing", "picked_up", "on_the_way", "delivered"] } },
@@ -344,15 +291,7 @@ exports.getStats = async (_req, res) => {
     res.json({
       success: true,
       data: {
-        totalOrders,
-        pending,
-        approved,
-        rejected,
-        preparing,
-        pickedUp,
-        onTheWay,
-        delivered,
-        cancelled,
+        totalOrders, pending, approved, rejected, preparing, pickedUp, onTheWay, delivered, cancelled,
         revenue: revenueAgg._sum.totalAmount || 0,
         todayOrders,
         todayRevenue: todayRevenueAgg._sum.totalAmount || 0,
@@ -365,7 +304,7 @@ exports.getStats = async (_req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// GET BY ID (owner / courier / admin)
+// GET BY ID
 // ═══════════════════════════════════════════
 exports.getById = async (req, res) => {
   try {
@@ -393,7 +332,7 @@ exports.getById = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// ACCEPT (courier only)
+// ACCEPT
 // ═══════════════════════════════════════════
 exports.accept = async (req, res) => {
   if ((req.user.role || "").toLowerCase() !== "courier") {
@@ -406,9 +345,7 @@ exports.accept = async (req, res) => {
     if (!existing) return res.status(404).json({ error: "Not found" });
 
     if (existing.status !== "approved") {
-      return res
-        .status(400)
-        .json({ error: "Only approved orders can be accepted" });
+      return res.status(400).json({ error: "Only approved orders can be accepted" });
     }
     if (existing.courierId && existing.courierId !== req.user.id) {
       return res.status(409).json({ error: "Order already taken" });
@@ -418,7 +355,7 @@ exports.accept = async (req, res) => {
       where: { id: req.params.id },
       data: {
         courierId: req.user.id,
-        status: "preparing", // ✅ auto-advance status when courier accepts
+        status: "preparing",
       },
       include: { courier: true, customer: true },
     });
@@ -432,7 +369,7 @@ exports.accept = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// UPDATE STATUS (admin or assigned courier)
+// UPDATE STATUS
 // ═══════════════════════════════════════════
 exports.updateStatus = async (req, res) => {
   const role = (req.user.role || "").toLowerCase();
@@ -456,18 +393,11 @@ exports.updateStatus = async (req, res) => {
     });
     if (!existing) return res.status(404).json({ error: "Not found" });
 
-    // ✅ Couriers can only move their own assigned orders forward
     if (role === "courier") {
       if (existing.courierId !== req.user.id) {
-        return res
-          .status(403)
-          .json({ error: "Not assigned to this order" });
+        return res.status(403).json({ error: "Not assigned to this order" });
       }
-      const courierAllowed = [
-        "picked_up",
-        "on_the_way",
-        "delivered",
-      ];
+      const courierAllowed = ["picked_up", "on_the_way", "delivered"];
       if (!courierAllowed.includes(newStatus)) {
         return res.status(403).json({
           error: `Couriers can only set: ${courierAllowed.join(", ")}`,
@@ -475,11 +405,8 @@ exports.updateStatus = async (req, res) => {
       }
     }
 
-    // ✅ Prevent duplicate status updates
     if (existing.status === newStatus) {
-      return res
-        .status(400)
-        .json({ error: `Order is already ${newStatus}` });
+      return res.status(400).json({ error: `Order is already ${newStatus}` });
     }
 
     const order = await prisma.order.update({
@@ -497,18 +424,28 @@ exports.updateStatus = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════
-// 🗑️ DELETE ORDER (Admin Only)
+// DELETE ORDER (UPDATED)
 // ═══════════════════════════════════════════
 exports.deleteOrder = async (req, res) => {
-  if ((req.user.role || "").toLowerCase() !== "admin") {
-    return res.status(403).json({ error: "Admins only" });
-  }
-
   try {
     const existing = await prisma.order.findUnique({
       where: { id: req.params.id },
     });
     if (!existing) return res.status(404).json({ error: "Not found" });
+
+    const role = (req.user.role || "").toLowerCase();
+    const isAdmin = role === "admin";
+    const isOwner = existing.customerId === req.user.id;
+
+    // ✅ ALLOW ADMIN OR OWNER (IF PENDING)
+    if (!isAdmin) {
+      if (!isOwner) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      if (existing.status !== "pending") {
+        return res.status(400).json({ error: "You can only cancel pending orders." });
+      }
+    }
 
     await prisma.order.delete({ where: { id: req.params.id } });
 

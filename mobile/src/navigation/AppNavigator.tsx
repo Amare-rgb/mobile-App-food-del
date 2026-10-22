@@ -36,13 +36,20 @@ export type RootStackParamList = {
   Login: undefined;
   CustomerTabs: undefined;
   AdminDrawer: undefined;
-  CourierDrawer: undefined; // ✅ added
+  CourierDrawer: undefined;
   FoodDetail: { food?: any; foodId?: string };
   Checkout:
     | { total?: number; delivery?: number; vat?: number; itemCount?: number }
     | undefined;
   ChapaPayment: { orderId: string; total: number };
-  OrderSuccess: { orderId?: string; total?: number } | undefined;
+  // ✅ OrderSuccess now accepts the full Chapa payload
+  OrderSuccess: { 
+    orderId?: string; 
+    total?: number; 
+    method?: string; 
+    txRef?: string; 
+    paidAt?: string 
+  } | undefined;
   Favorites: undefined;
   CartModal: undefined;
   EditProfile: undefined;
@@ -119,12 +126,8 @@ const AppNavigator: React.FC = () => {
 
   if (loading) return <LoadingScreen />;
 
-  // ✅ Normalize role once — 'customer' | 'courier' | 'admin'
   const role = (user?.role || '').toLowerCase();
 
-  // ⚠️ Courier drawer — create it if you don't have one yet
-  // If you don't have CourierDrawerNavigator, temporarily use CustomerTabs
-  // or create a minimal courier navigator (see notes below).
   let CourierNavigator: React.ComponentType<any> | null = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -146,18 +149,19 @@ const AppNavigator: React.FC = () => {
             <Stack.Screen name="AdminDrawer" component={AdminDrawerNavigator} />
           </React.Fragment>
         ) : role === 'courier' && CourierNavigator ? (
-          // ✅ Couriers get their own drawer
           <React.Fragment>
             <Stack.Screen name="CourierDrawer" component={CourierNavigator} />
           </React.Fragment>
         ) : (
-          // ✅ Customers (and any courier when no drawer exists yet)
           <React.Fragment>
             <Stack.Screen name="CustomerTabs" component={CustomerTabs} />
             <Stack.Screen name="FoodDetail" component={FoodDetailScreen} />
             <Stack.Screen name="Checkout" component={CheckoutScreen} />
             <Stack.Screen name="ChapaPayment" component={ChapaPaymentScreen} />
+            
+            {/* ✅ Using OrderSuccess for both Cash and Chapa payments */}
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+            
             <Stack.Screen name="Favorites" component={FavoritesScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen
